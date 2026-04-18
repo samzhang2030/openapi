@@ -323,6 +323,7 @@ type OpenAIGatewayService struct {
 	httpUpstream          HTTPUpstream
 	deferredService       *DeferredService
 	openAITokenProvider   *OpenAITokenProvider
+	tlsFPProfileService   *TLSFingerprintProfileService
 	toolCorrector         *CodexToolCorrector
 	openaiWSResolver      OpenAIWSProtocolResolver
 	resolver              *ModelPricingResolver
@@ -363,6 +364,7 @@ func NewOpenAIGatewayService(
 	httpUpstream HTTPUpstream,
 	deferredService *DeferredService,
 	openAITokenProvider *OpenAITokenProvider,
+	tlsFPProfileService *TLSFingerprintProfileService,
 	resolver *ModelPricingResolver,
 	channelService *ChannelService,
 	balanceNotifyService *BalanceNotifyService,
@@ -391,6 +393,7 @@ func NewOpenAIGatewayService(
 		httpUpstream:          httpUpstream,
 		deferredService:       deferredService,
 		openAITokenProvider:   openAITokenProvider,
+		tlsFPProfileService:   tlsFPProfileService,
 		toolCorrector:         NewCodexToolCorrector(),
 		openaiWSResolver:      NewOpenAIWSProtocolResolver(cfg),
 		resolver:              resolver,
@@ -2319,7 +2322,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// Send request
 		upstreamStart := time.Now()
-		resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.resolveTLSProfile(account))
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			// Ensure the client receives an error response (handlers assume Forward writes on non-failover errors).
@@ -2540,7 +2543,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.resolveTLSProfile(account))
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
@@ -2692,7 +2695,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// OAuth 透传到 ChatGPT internal API 时补齐必要头。
 	if account.Type == AccountTypeOAuth {
 		promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
-		req.Host = "chatgpt.com"
 		if chatgptAccountID := account.GetChatGPTAccountID(); chatgptAccountID != "" {
 			req.Header.Set("chatgpt-account-id", chatgptAccountID)
 		}
@@ -2708,7 +2710,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 			if clientSessionID == "" {
 				clientSessionID = resolveOpenAICompactSessionID(c)
 			}
-		} else if req.Header.Get("accept") == "" {
+		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
 		if req.Header.Get("OpenAI-Beta") == "" {
@@ -3178,8 +3180,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	// Set headers specific to OAuth accounts (ChatGPT internal API)
 	if account.Type == AccountTypeOAuth {
-		// Required: set Host for ChatGPT API (must use req.Host, not Header.Set)
-		req.Host = "chatgpt.com"
 		// Required: set chatgpt-account-id header
 		chatgptAccountID := account.GetChatGPTAccountID()
 		if chatgptAccountID != "" {

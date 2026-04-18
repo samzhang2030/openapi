@@ -111,7 +111,13 @@ func TestNormalizeOpenAIModelForUpstream(t *testing.T) {
 			name:    "oauth keeps codex normalization behavior",
 			account: &Account{Type: AccountTypeOAuth},
 			model:   "gemini-3-flash-preview",
-			want:    "gpt-5.1",
+			want:    "gpt-5.4",
+		},
+		{
+			name:    "oauth maps legacy mini models to supported mini codex family",
+			account: &Account{Type: AccountTypeOAuth},
+			model:   "gpt-4.1-mini",
+			want:    "gpt-5.4-mini",
 		},
 		{
 			name:    "apikey preserves custom compatible model",

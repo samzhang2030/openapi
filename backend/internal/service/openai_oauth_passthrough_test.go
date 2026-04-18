@@ -173,6 +173,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamKeepsToolNameAndBodyNormali
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
+	c.Request.Header.Set("Accept", "*/*")
 	c.Request.Header.Set("Authorization", "Bearer inbound-should-not-forward")
 	c.Request.Header.Set("Cookie", "secret=1")
 	c.Request.Header.Set("X-Api-Key", "sk-inbound")
@@ -245,6 +246,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamKeepsToolNameAndBodyNormali
 
 	// 3) required OAuth headers are present
 	require.Equal(t, "chatgpt.com", upstream.lastReq.Host)
+	require.Equal(t, "text/event-stream", upstream.lastReq.Header.Get("Accept"))
 	require.Equal(t, "chatgpt-acc", upstream.lastReq.Header.Get("chatgpt-account-id"))
 
 	// 4) downstream SSE keeps tool name (no toolCorrector)

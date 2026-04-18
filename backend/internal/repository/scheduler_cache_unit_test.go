@@ -15,6 +15,9 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 		Platform: service.PlatformOpenAI,
 		Type:     service.AccountTypeOAuth,
 		Extra: map[string]any{
+			"enable_tls_fingerprint":                       true,
+			"tls_fingerprint_profile_id":                   int64(7),
+			"openai_passthrough":                           true,
 			"openai_oauth_responses_websockets_v2_enabled": true,
 			"openai_oauth_responses_websockets_v2_mode":    service.OpenAIWSIngressModePassthrough,
 			"openai_ws_force_http":                         true,
@@ -25,6 +28,9 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 
 	got := buildSchedulerMetadataAccount(account)
 
+	require.Equal(t, true, got.Extra["enable_tls_fingerprint"])
+	require.Equal(t, int64(7), got.Extra["tls_fingerprint_profile_id"])
+	require.Equal(t, true, got.Extra["openai_passthrough"])
 	require.Equal(t, true, got.Extra["openai_oauth_responses_websockets_v2_enabled"])
 	require.Equal(t, service.OpenAIWSIngressModePassthrough, got.Extra["openai_oauth_responses_websockets_v2_mode"])
 	require.Equal(t, true, got.Extra["openai_ws_force_http"])

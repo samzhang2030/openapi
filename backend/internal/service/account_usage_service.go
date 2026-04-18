@@ -611,7 +611,6 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 	if err != nil {
 		return nil, fmt.Errorf("create openai probe request: %w", err)
 	}
-	req.Host = "chatgpt.com"
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "text/event-stream")

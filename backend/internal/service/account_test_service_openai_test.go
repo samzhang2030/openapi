@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
@@ -106,6 +107,8 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4")
 	require.NoError(t, err)
 	require.NotEmpty(t, repo.updatedExtra)
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, "chatgpt.com", upstream.requests[0].Host)
 	require.Equal(t, 42.0, repo.updatedExtra["codex_5h_used_percent"])
 	require.Equal(t, 88.0, repo.updatedExtra["codex_7d_used_percent"])
 	require.Contains(t, recorder.Body.String(), "test_complete")
@@ -141,4 +144,36 @@ func TestAccountTestService_OpenAI429PersistsSnapshotWithoutRateLimit(t *testing
 	require.Zero(t, repo.rateLimitedID)
 	require.Nil(t, repo.rateLimitedAt)
 	require.Nil(t, account.RateLimitResetAt)
+}
+
+func TestAccountTestService_OpenAILegacyModelIsNormalizedForOAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := newTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+
+`))
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{httpUpstream: upstream}
+	account := &Account{
+		ID:          90,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "test-token"},
+		Extra: map[string]any{
+			"enable_tls_fingerprint": true,
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-4.1-mini")
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	require.Contains(t, upstream.requests[0].URL.String(), "chatgpt.com/backend-api/codex/responses")
+
+	body, readErr := io.ReadAll(upstream.requests[0].Body)
+	require.NoError(t, readErr)
+	require.Equal(t, "gpt-5.4-mini", gjson.GetBytes(body, "model").String())
 }

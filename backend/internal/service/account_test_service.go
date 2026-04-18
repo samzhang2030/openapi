@@ -434,6 +434,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	var apiURL string
 	var isOAuth bool
 	var chatgptAccountID string
+	upstreamModelID := testModelID
 
 	if account.IsOAuth() {
 		isOAuth = true
@@ -446,6 +447,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		// OAuth uses ChatGPT internal API
 		apiURL = chatgptCodexAPIURL
 		chatgptAccountID = account.GetChatGPTAccountID()
+		upstreamModelID = normalizeOpenAIModelForUpstream(account, testModelID)
 	} else if account.Type == "apikey" {
 		// API Key - use Platform API
 		authToken = account.GetOpenAIApiKey()
@@ -474,7 +476,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	c.Writer.Flush()
 
 	// Create OpenAI Responses API payload
-	payload := createOpenAITestPayload(testModelID, isOAuth)
+	payload := createOpenAITestPayload(upstreamModelID, isOAuth)
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event
@@ -491,7 +493,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// Set OAuth-specific headers for ChatGPT internal API
 	if isOAuth {
-		req.Host = "chatgpt.com"
 		req.Header.Set("accept", "text/event-stream")
 		if chatgptAccountID != "" {
 			req.Header.Set("chatgpt-account-id", chatgptAccountID)
