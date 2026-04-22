@@ -5315,6 +5315,59 @@ export default {
       'The target site blocks iframe embedding, so it needs to be opened directly in your browser to continue.',
   },
 
+  rechargeCenter: {
+    title: 'Recharge Center',
+    subtitle:
+      'Choose the fastest recharge path first. We keep the entry simple, then route you to the right page for checkout or code redemption.',
+    back: 'Back',
+    unknownUser: 'Current user',
+    balanceLabel: 'Balance',
+    statusLabel: 'Route',
+    contactLabel: 'Contact',
+    statusEnabled: 'In-site payment available',
+    statusFallback: 'External checkout + redeem flow',
+    helperEnabled:
+      'If you prefer the official panel flow, use direct top-up. If you already bought a recharge code, head straight to redeem.',
+    helperFallback:
+      'The current recharge flow uses an external shop first, then redeem in-site. This keeps the checkout stable while the internal payment channel is still unavailable.',
+    summaryTitle: 'How it works',
+    summaryOneTitle: 'Pick a channel',
+    summaryOneDesc: 'Use the external shop when you need a quick order, or jump directly to the in-site action that matches your current step.',
+    summaryTwoTitleEnabled: 'Complete payment',
+    summaryTwoDescEnabled: 'Pay inside the supported channel and return to the panel to confirm the recharge result.',
+    summaryTwoTitleFallback: 'Purchase or redeem',
+    summaryTwoDescFallback: 'Buy the recharge code in the shop, then redeem it inside Bridgemind to credit the balance.',
+    summaryThreeTitle: 'Check the result',
+    summaryThreeDesc: 'After completion, review your orders or return to the dashboard and continue using your API key immediately.',
+    shop: {
+      badge: 'Primary channel',
+      title: 'Recharge Shop',
+      description: 'Open the external checkout to purchase recharge products or subscription-related items in a stable payment flow.',
+      cta: 'Open external shop',
+    },
+    direct: {
+      badge: 'Fast lane',
+      title: 'Direct Top-up',
+      description: 'Enter the in-site payment flow and complete the balance top-up inside Bridgemind.',
+      cta: 'Open direct top-up',
+    },
+    redeem: {
+      badge: 'Redeem ready',
+      title: 'Redeem Recharge Code',
+      description: 'Already bought a code? Go straight to the redeem page and credit the balance without repeating the checkout step.',
+      cta: 'Open redeem page',
+    },
+    quickTitle: 'Quick Actions',
+    quickOrders: 'My Orders',
+    quickRedeem: 'Redeem Code',
+    quickDocs: 'Open Docs',
+    tipTitle: 'Current Tip',
+    tipEnabled:
+      'If a direct payment window is interrupted, reopen it from the payment flow. If you bought externally, redeem first and then confirm the credited balance in your account.',
+    tipFallback:
+      'Because the internal payment provider is not enabled right now, the recommended path is: buy in the shop, then return to Bridgemind and redeem the code.',
+  },
+
   // Announcements Page
   announcements: {
     title: 'Announcements',
