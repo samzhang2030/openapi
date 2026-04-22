@@ -16,6 +16,7 @@ This directory contains files for deploying Sub2API on Linux servers.
 | `docker-compose.yml` | Docker Compose configuration (named volumes) |
 | `docker-compose.local.yml` | Docker Compose configuration (local directories, easy migration) |
 | `docker-deploy.sh` | **One-click Docker deployment script (recommended)** |
+| `ops/update_production.sh` | Fork production one-click update script (build local image + restart app only) |
 | `.env.example` | Docker environment variables template |
 | `DOCKER.md` | Docker Hub documentation |
 | `install.sh` | One-click binary installation script |
@@ -28,6 +29,25 @@ This directory contains files for deploying Sub2API on Linux servers.
 ---
 
 ## Docker Deployment (Recommended)
+
+### Fork Production One-Click Update
+
+If you deploy from your own fork and want production to run a locally built image instead of `weishaw/sub2api:latest`, use:
+
+```bash
+./deploy/ops/update_production.sh
+```
+
+What it does:
+
+- fetches the latest `origin/main`
+- preserves the server-local `deploy/docker-compose.yml`
+- builds a clean image from the target git commit
+- writes `deploy/docker-compose.override.yml` with that image tag
+- restarts only `sub2api`
+- verifies container health
+
+This is useful for deployments like `samzhang2030/openapi`, where production should track fork-specific fixes instead of only upstream Docker Hub images.
 
 ### Method 1: One-Click Deployment (Recommended)
 
