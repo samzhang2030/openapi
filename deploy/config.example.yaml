@@ -26,6 +26,15 @@ server:
   frontend_url: ""
   # Trusted proxies for X-Forwarded-For parsing (CIDR/IP). Empty disables trusted proxies.
   # 信任的代理地址（CIDR/IP 格式），用于解析 X-Forwarded-For 头。留空则禁用代理信任。
+  # If you are behind Nginx/Caddy plus Docker, restore the real client IP at the reverse proxy
+  # first (for example Cloudflare real_ip), then trust only the local proxy hop here.
+  # 如果部署在 Nginx/Caddy + Docker 后面，请先在反向代理层恢复真实客户端 IP
+  # （例如配置 Cloudflare real_ip），然后这里只信任本机代理跳点。
+  # Example:
+  # trusted_proxies:
+  #   - "127.0.0.1/32"
+  #   - "::1/128"
+  #   - "172.18.0.0/16"
   trusted_proxies: []
   # Global max request body size in bytes (default: 256MB)
   # 全局最大请求体大小（字节，默认 256MB）

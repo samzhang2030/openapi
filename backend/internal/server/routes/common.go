@@ -8,9 +8,14 @@ import (
 
 // RegisterCommonRoutes 注册通用路由（健康检查、状态等）
 func RegisterCommonRoutes(r *gin.Engine) {
-	// 健康检查
-	r.GET("/health", func(c *gin.Context) {
+	healthHandler := func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	}
+
+	// 健康检查
+	r.GET("/health", healthHandler)
+	r.HEAD("/health", func(c *gin.Context) {
+		c.Status(http.StatusOK)
 	})
 
 	// Claude Code 遥测日志（忽略，直接返回200）
