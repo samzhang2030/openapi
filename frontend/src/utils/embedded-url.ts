@@ -45,6 +45,18 @@ export function buildEmbeddedUrl(
   }
 }
 
+export function isCrossOriginUrl(urlValue: string): boolean {
+  if (!urlValue || typeof window === 'undefined') return false
+
+  try {
+    const url = new URL(urlValue, window.location.origin)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
+    return url.origin !== window.location.origin
+  } catch {
+    return false
+  }
+}
+
 export function detectTheme(): 'light' | 'dark' {
   if (typeof document === 'undefined') return 'light'
   return document.documentElement.classList.contains('dark') ? 'dark' : 'light'

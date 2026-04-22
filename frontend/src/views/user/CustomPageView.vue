@@ -43,6 +43,39 @@
           </div>
         </div>
 
+        <div
+          v-else-if="opensExternally"
+          class="flex h-full items-center justify-center p-10 text-center"
+        >
+          <div class="max-w-lg">
+            <div
+              class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"
+            >
+              <Icon name="externalLink" size="lg" class="text-gray-400" />
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('customPage.externalTitle') }}
+            </h3>
+            <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
+              {{ t('customPage.externalDesc') }}
+            </p>
+            <div class="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <a
+                :href="externalUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-primary btn-sm"
+              >
+                <Icon name="externalLink" size="sm" class="mr-1.5" :stroke-width="2" />
+                {{ t('customPage.openInNewTab') }}
+              </a>
+              <a :href="externalUrl" class="btn btn-secondary btn-sm">
+                {{ t('customPage.openHere') }}
+              </a>
+            </div>
+          </div>
+        </div>
+
         <div v-else class="custom-embed-shell">
           <a
             :href="embeddedUrl"
@@ -73,7 +106,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { buildEmbeddedUrl, detectTheme } from '@/utils/embedded-url'
+import { buildEmbeddedUrl, detectTheme, isCrossOriginUrl } from '@/utils/embedded-url'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -111,9 +144,16 @@ const embeddedUrl = computed(() => {
   )
 })
 
+const externalUrl = computed(() => menuItem.value?.url?.trim() ?? '')
+
 const isValidUrl = computed(() => {
   const url = embeddedUrl.value
   return url.startsWith('http://') || url.startsWith('https://')
+})
+
+const opensExternally = computed(() => {
+  if (!menuItem.value) return false
+  return isCrossOriginUrl(externalUrl.value)
 })
 
 onMounted(async () => {

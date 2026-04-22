@@ -5467,10 +5467,13 @@ export default {
   customPage: {
     title: '自定义页面',
     openInNewTab: '新窗口打开',
+    openHere: '当前窗口打开',
     notFoundTitle: '页面不存在',
     notFoundDesc: '该自定义页面不存在或已被删除。',
     notConfiguredTitle: '页面链接未配置',
     notConfiguredDesc: '该自定义页面的 URL 未正确配置。',
+    externalTitle: '该页面需要在外部打开',
+    externalDesc: '目标站点禁止被 iframe 嵌入，请直接在浏览器中打开后继续操作。',
   },
 
   // Announcements Page

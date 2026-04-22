@@ -5305,10 +5305,14 @@ export default {
   customPage: {
     title: 'Custom Page',
     openInNewTab: 'Open in new tab',
+    openHere: 'Open here',
     notFoundTitle: 'Page not found',
     notFoundDesc: 'This custom page does not exist or has been removed.',
     notConfiguredTitle: 'Page URL not configured',
     notConfiguredDesc: 'The URL for this custom page has not been properly configured.',
+    externalTitle: 'This page opens externally',
+    externalDesc:
+      'The target site blocks iframe embedding, so it needs to be opened directly in your browser to continue.',
   },
 
   // Announcements Page
