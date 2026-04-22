@@ -8,13 +8,13 @@ import (
 var codexModelMap = map[string]string{
 	"gpt-5.4":                    "gpt-5.4",
 	"gpt-5.4-mini":               "gpt-5.4-mini",
-	"gpt-5.4-nano":               "gpt-5.4-nano",
 	"gpt-5.4-none":               "gpt-5.4",
 	"gpt-5.4-low":                "gpt-5.4",
 	"gpt-5.4-medium":             "gpt-5.4",
 	"gpt-5.4-high":               "gpt-5.4",
 	"gpt-5.4-xhigh":              "gpt-5.4",
 	"gpt-5.4-chat-latest":        "gpt-5.4",
+	"gpt-4.1-mini":               "gpt-5.4-mini",
 	"gpt-5.3":                    "gpt-5.3-codex",
 	"gpt-5.3-none":               "gpt-5.3-codex",
 	"gpt-5.3-low":                "gpt-5.3-codex",
@@ -22,11 +22,11 @@ var codexModelMap = map[string]string{
 	"gpt-5.3-high":               "gpt-5.3-codex",
 	"gpt-5.3-xhigh":              "gpt-5.3-codex",
 	"gpt-5.3-codex":              "gpt-5.3-codex",
-	"gpt-5.3-codex-spark":        "gpt-5.3-codex",
-	"gpt-5.3-codex-spark-low":    "gpt-5.3-codex",
-	"gpt-5.3-codex-spark-medium": "gpt-5.3-codex",
-	"gpt-5.3-codex-spark-high":   "gpt-5.3-codex",
-	"gpt-5.3-codex-spark-xhigh":  "gpt-5.3-codex",
+	"gpt-5.3-codex-spark":        "gpt-5.3-codex-spark",
+	"gpt-5.3-codex-spark-low":    "gpt-5.3-codex-spark",
+	"gpt-5.3-codex-spark-medium": "gpt-5.3-codex-spark",
+	"gpt-5.3-codex-spark-high":   "gpt-5.3-codex-spark",
+	"gpt-5.3-codex-spark-xhigh":  "gpt-5.3-codex-spark",
 	"gpt-5.3-codex-low":          "gpt-5.3-codex",
 	"gpt-5.3-codex-medium":       "gpt-5.3-codex",
 	"gpt-5.3-codex-high":         "gpt-5.3-codex",
@@ -46,11 +46,11 @@ var codexModelMap = map[string]string{
 	"gpt-5.2-medium":             "gpt-5.2",
 	"gpt-5.2-high":               "gpt-5.2",
 	"gpt-5.2-xhigh":              "gpt-5.2",
-	"gpt-5.2-codex":              "gpt-5.3-codex",
-	"gpt-5.2-codex-low":          "gpt-5.3-codex",
-	"gpt-5.2-codex-medium":       "gpt-5.3-codex",
-	"gpt-5.2-codex-high":         "gpt-5.3-codex",
-	"gpt-5.2-codex-xhigh":        "gpt-5.3-codex",
+	"gpt-5.2-codex":              "gpt-5.2",
+	"gpt-5.2-codex-low":          "gpt-5.2",
+	"gpt-5.2-codex-medium":       "gpt-5.2",
+	"gpt-5.2-codex-high":         "gpt-5.2",
+	"gpt-5.2-codex-xhigh":        "gpt-5.2",
 	"gpt-5.1-codex-mini":         "gpt-5.3-codex",
 	"gpt-5.1-codex-mini-medium":  "gpt-5.3-codex",
 	"gpt-5.1-codex-mini-high":    "gpt-5.3-codex",
@@ -66,8 +66,8 @@ var codexModelMap = map[string]string{
 	"gpt-5-codex-mini-medium":    "gpt-5.3-codex",
 	"gpt-5-codex-mini-high":      "gpt-5.3-codex",
 	"gpt-5":                      "gpt-5.4",
-	"gpt-5-mini":                 "gpt-5.4-mini",
-	"gpt-5-nano":                 "gpt-5.4-nano",
+	"gpt-5-mini":                 "gpt-5.4",
+	"gpt-5-nano":                 "gpt-5.4",
 }
 
 type codexTransformResult struct {
@@ -238,17 +238,17 @@ func normalizeCodexModel(model string) string {
 	if strings.Contains(normalized, "gpt-5.4-mini") || strings.Contains(normalized, "gpt 5.4 mini") {
 		return "gpt-5.4-mini"
 	}
-	if strings.Contains(normalized, "gpt-5.4-nano") || strings.Contains(normalized, "gpt 5.4 nano") {
-		return "gpt-5.4-nano"
+	if strings.Contains(normalized, "gpt-4.1-mini") || strings.Contains(normalized, "gpt 4.1 mini") {
+		return "gpt-5.4-mini"
 	}
 	if strings.Contains(normalized, "gpt-5.4") || strings.Contains(normalized, "gpt 5.4") {
 		return "gpt-5.4"
 	}
-	if strings.Contains(normalized, "gpt-5.2-codex") || strings.Contains(normalized, "gpt 5.2 codex") {
-		return "gpt-5.2-codex"
-	}
 	if strings.Contains(normalized, "gpt-5.2") || strings.Contains(normalized, "gpt 5.2") {
 		return "gpt-5.2"
+	}
+	if strings.Contains(normalized, "gpt-5.3-codex-spark") || strings.Contains(normalized, "gpt 5.3 codex spark") {
+		return "gpt-5.3-codex-spark"
 	}
 	if strings.Contains(normalized, "gpt-5.3-codex") || strings.Contains(normalized, "gpt 5.3 codex") {
 		return "gpt-5.3-codex"
@@ -275,12 +275,6 @@ func normalizeCodexModel(model string) string {
 	}
 	if strings.Contains(normalized, "codex") {
 		return "gpt-5.3-codex"
-	}
-	if strings.Contains(normalized, "-nano") || strings.Contains(normalized, " nano") {
-		return "gpt-5.4-nano"
-	}
-	if strings.Contains(normalized, "-mini") || strings.Contains(normalized, " mini") {
-		return "gpt-5.4-mini"
 	}
 	if strings.Contains(normalized, "gpt-5") || strings.Contains(normalized, "gpt 5") {
 		return "gpt-5.4"
