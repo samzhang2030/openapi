@@ -98,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores'
@@ -106,7 +106,12 @@ import { useAuthStore } from '@/stores/auth'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { buildEmbeddedUrl, detectTheme, isCrossOriginUrl } from '@/utils/embedded-url'
+import {
+  buildEmbeddedUrl,
+  detectTheme,
+  isCrossOriginUrl,
+  resolveInternalNavigationPath,
+} from '@/utils/embedded-url'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -145,6 +150,7 @@ const embeddedUrl = computed(() => {
 })
 
 const externalUrl = computed(() => menuItem.value?.url?.trim() ?? '')
+const internalAppPath = computed(() => resolveInternalNavigationPath(externalUrl.value))
 
 const isValidUrl = computed(() => {
   const url = embeddedUrl.value
@@ -155,6 +161,15 @@ const opensExternally = computed(() => {
   if (!menuItem.value) return false
   return isCrossOriginUrl(externalUrl.value)
 })
+
+watch(
+  internalAppPath,
+  (path) => {
+    if (!path || path === route.fullPath || typeof window === 'undefined') return
+    window.location.replace(path)
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   pageTheme.value = detectTheme()

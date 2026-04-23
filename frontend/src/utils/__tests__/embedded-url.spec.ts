@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildEmbeddedUrl, detectTheme, isCrossOriginUrl } from '../embedded-url'
+import {
+  buildEmbeddedUrl,
+  detectTheme,
+  isCrossOriginUrl,
+  resolveInternalNavigationPath,
+} from '../embedded-url'
 
 describe('embedded-url', () => {
   const originalLocation = window.location
@@ -65,6 +70,15 @@ describe('embedded-url', () => {
     expect(isCrossOriginUrl('https://app.example.com/docs')).toBe(false)
     expect(isCrossOriginUrl('/internal/path')).toBe(false)
     expect(isCrossOriginUrl('not a url')).toBe(false)
+  })
+
+  it('resolves same-origin URLs into in-app navigation paths', () => {
+    expect(resolveInternalNavigationPath('https://app.example.com/recharge-center?shop=1#card')).toBe(
+      '/recharge-center?shop=1#card',
+    )
+    expect(resolveInternalNavigationPath('/docs')).toBe('/docs')
+    expect(resolveInternalNavigationPath('https://pay.example.com/checkout')).toBeNull()
+    expect(resolveInternalNavigationPath('not a url')).toBeNull()
   })
 
   it('detects dark mode from document root class', () => {

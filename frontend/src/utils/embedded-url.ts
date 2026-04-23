@@ -57,6 +57,25 @@ export function isCrossOriginUrl(urlValue: string): boolean {
   }
 }
 
+export function resolveInternalNavigationPath(urlValue: string): string | null {
+  if (!urlValue || typeof window === 'undefined') return null
+
+  try {
+    const trimmed = urlValue.trim()
+    const isAbsoluteHttpUrl = /^https?:\/\//i.test(trimmed)
+    const isRootRelativePath = trimmed.startsWith('/')
+
+    if (!isAbsoluteHttpUrl && !isRootRelativePath) return null
+
+    const url = new URL(trimmed, window.location.origin)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    if (url.origin !== window.location.origin) return null
+    return `${url.pathname}${url.search}${url.hash}` || '/'
+  } catch {
+    return null
+  }
+}
+
 export function detectTheme(): 'light' | 'dark' {
   if (typeof document === 'undefined') return 'light'
   return document.documentElement.classList.contains('dark') ? 'dark' : 'light'

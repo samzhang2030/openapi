@@ -232,7 +232,7 @@ import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
-import { isCrossOriginUrl } from '@/utils/embedded-url'
+import { isCrossOriginUrl, resolveInternalNavigationPath } from '@/utils/embedded-url'
 import type { CustomMenuItem } from '@/types'
 
 interface NavItem {
@@ -749,12 +749,14 @@ const adminNavItems = computed((): NavItem[] => {
 })
 
 function mapCustomMenuItemToNav(item: CustomMenuItem): NavItem {
+  const internalPath = resolveInternalNavigationPath(item.url)
+
   return {
-    path: `/custom/${item.id}`,
+    path: internalPath ?? `/custom/${item.id}`,
     label: item.label,
     icon: null,
     iconSvg: item.icon_svg,
-    externalUrl: isCrossOriginUrl(item.url) ? item.url : undefined,
+    externalUrl: internalPath ? undefined : (isCrossOriginUrl(item.url) ? item.url : undefined),
   }
 }
 
