@@ -811,6 +811,14 @@ onMounted(async () => {
     if (checkout.value.balance_disabled) {
       activeTab.value = 'subscription'
     }
+    const planId = Number(route.query.plan)
+    if (Number.isFinite(planId) && planId > 0) {
+      const matchedPlan = checkout.value.plans.find(plan => plan.id === planId)
+      if (matchedPlan) {
+        activeTab.value = 'subscription'
+        selectedPlan.value = matchedPlan
+      }
+    }
     // Handle renewal navigation: ?tab=subscription&group=123
     if (route.query.tab === 'subscription') {
       activeTab.value = 'subscription'
