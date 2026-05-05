@@ -288,7 +288,7 @@
 
           <div class="row mt-4">
             <div class="col-12" id="order_box">
-              <div v-if="subscriptionGoodsSelected" class="ure_info_box subscription-entry-box">
+              <div v-if="subscriptionGoodsSelected && !subscriptionDirectCheckoutEnabled" class="ure_info_box subscription-entry-box">
                 <div class="ure_info_hide">
                   <span>订阅开通说明</span>
                 </div>
@@ -354,10 +354,10 @@
                 </div>
 
                 <div class="pay_type">
-                  <div class="pay_type_hide">选择支付方式</div>
-                  <div class="pay_type_box">
-                    <button
-                      v-for="(channel, index) in channels"
+                <div class="pay_type_hide">选择支付方式</div>
+                <div class="pay_type_box">
+                  <button
+                      v-for="(channel, index) in displayedChannels"
                       :key="channel.id"
                       type="button"
                       class="pay_type_leng"
@@ -497,11 +497,19 @@
 <script setup lang="ts">
 import QRCode from 'qrcode'
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { paymentAPI } from '@/api/payment'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
-import type { SubscriptionPlan as PaymentSubscriptionPlan } from '@/types/payment'
+import type {
+  CreateOrderResult,
+  MethodLimit,
+  SubscriptionPlan as PaymentSubscriptionPlan,
+} from '@/types/payment'
+import { getVisibleMethods, normalizeVisibleMethod } from '@/components/payment/paymentFlow'
+import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
+import { buildRechargeAuthHeaders } from '@/utils/recharge-auth'
+import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
 
 interface ApiResponse<T> {
   code: number
@@ -585,6 +593,8 @@ interface ShopChannel {
   id: number
   show_name: string
   rate?: number
+  payment_type?: string
+  synthetic_type?: 'internal_payment'
   paytype?: {
     icon?: string
   } | null
@@ -606,6 +616,21 @@ interface CreateOrderResponse {
   total_amount: number
 }
 
+interface InternalApiResponse<T> {
+  code: number
+  message: string
+  data: T
+  reason?: string
+  metadata?: Record<string, unknown>
+}
+
+type RechargeApiError = Error & {
+  code?: number | string
+  reason?: string
+  status?: number
+  metadata?: Record<string, unknown>
+}
+
 type SubscriptionPlan = PaymentSubscriptionPlan & {
   product_name?: string
 }
@@ -614,11 +639,16 @@ const DEFAULT_SHOP_URL = 'https://pay.ldxp.cn/shop/HQP8RZ4F'
 const AGREEMENT_STORAGE_KEY = 'bridgemind.recharge.agreement.v3'
 const DEFAULT_HEADER_LOGO = 'https://happp.cn/static/app/theme/default/img/shop_img.png'
 const SUBSCRIPTION_CATEGORY_ID = -20260423
+const INTERNAL_PAYMENT_CHANNEL_IDS: Record<string, number> = {
+  alipay: -2026042401,
+  wxpay: -2026042402,
+}
 
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const { t } = useI18n()
 
 const loading = ref(true)
 const goodsLoading = ref(false)
@@ -631,6 +661,7 @@ const goodsList = ref<ShopGoods[]>([])
 const channels = ref<ShopChannel[]>([])
 const priceInfo = ref<PriceInfo | null>(null)
 const subscriptionPlans = ref<SubscriptionPlan[]>([])
+const checkoutPaymentMethods = ref<Record<string, MethodLimit>>({})
 
 const selectedCategoryId = ref<number | null>(null)
 const selectedProductKey = ref('')
@@ -683,6 +714,10 @@ const shopToken = computed(() => {
   return extractShopToken(shopUrl.value)
 })
 
+const embeddedAuthToken = computed(() =>
+  typeof route.query.token === 'string' ? route.query.token.trim() : '',
+)
+
 const merchantDisplayName = computed(() => merchantInfo.value?.nickname?.trim() || siteName.value)
 const headerLogoUrl = computed(() => DEFAULT_HEADER_LOGO)
 const orderQueryUrl = computed(() => buildShopUrl('/orderquery'))
@@ -719,6 +754,27 @@ const selectedProduct = computed(
 )
 
 const subscriptionGoodsSelected = computed(() => isSubscriptionGoods(selectedProduct.value))
+const subscriptionDirectCheckoutEnabled = computed(() => canDirectOrderSubscriptionGoods(selectedProduct.value))
+const internalPaymentChannels = computed(() =>
+  Object.entries(getVisibleMethods(checkoutPaymentMethods.value))
+    .filter(([, limit]) => limit.available !== false)
+    .map(([type]) => buildInternalPaymentChannel(type))
+    .filter((channel): channel is ShopChannel => Boolean(channel))
+)
+const displayedChannels = computed(() => {
+  if (subscriptionGoodsSelected.value && internalPaymentChannels.value.length > 0) {
+    return internalPaymentChannels.value
+  }
+  return channels.value
+})
+const selectedChannel = computed(
+  () => displayedChannels.value.find((channel) => channel.id === selectedChannelId.value) || null,
+)
+const selectedInternalPaymentType = computed(() => {
+  const channel = selectedChannel.value
+  if (channel?.synthetic_type !== 'internal_payment') return ''
+  return normalizeVisibleMethod(channel.payment_type || '') || channel.payment_type || ''
+})
 
 const selectedProductDescription = computed(() => {
   if (isSubscriptionGoods(selectedProduct.value)) {
@@ -757,10 +813,13 @@ const paymentFeeText = computed(() => {
 
 const submitButtonText = computed(() => {
   if (ordering.value) {
-    return subscriptionGoodsSelected.value ? '正在跳转订阅页' : '正在创建订单'
+    return subscriptionGoodsSelected.value && !subscriptionDirectCheckoutEnabled.value ? '正在跳转订阅页' : '正在创建订单'
   }
 
   if (subscriptionGoodsSelected.value) {
+    if (subscriptionDirectCheckoutEnabled.value) {
+      return '确认支付'
+    }
     return internalPaymentEnabled.value ? '立即开通订阅' : '订阅暂未开放'
   }
 
@@ -811,6 +870,21 @@ function buildShopUrl(path: string): string {
   }
 }
 
+function buildStorefrontFallbackUrl(goods?: ShopGoods | null): string {
+  for (const raw of [goods?.link, goods?.user?.link, shopUrl.value]) {
+    if (!raw?.trim()) continue
+    try {
+      const url = new URL(raw, shopOrigin.value)
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        return url.toString()
+      }
+    } catch {
+      continue
+    }
+  }
+  return shopUrl.value
+}
+
 function stripHtml(value: string): string {
   return value
     .replace(/<[^>]+>/g, ' ')
@@ -840,6 +914,27 @@ function isSubscriptionGoods(goods: ShopGoods | null | undefined): goods is Shop
   return Boolean(goods?.synthetic_type === 'subscription' && goods.subscription_plan)
 }
 
+function canDirectOrderSubscriptionGoods(goods: ShopGoods | null | undefined): boolean {
+  return Boolean(
+    isSubscriptionGoods(goods) &&
+    goods.goods_key &&
+    !goods.goods_key.startsWith('subscription-plan-'),
+  )
+}
+
+function buildInternalPaymentChannel(type: string): ShopChannel | null {
+  const paymentType = normalizeVisibleMethod(type) || type.trim()
+  if (!paymentType) return null
+  const id = INTERNAL_PAYMENT_CHANNEL_IDS[paymentType]
+  if (!id) return null
+  return {
+    id,
+    show_name: paymentType === 'wxpay' ? '微信支付' : '支付宝',
+    payment_type: paymentType,
+    synthetic_type: 'internal_payment',
+  }
+}
+
 function formatSubscriptionValidity(plan: SubscriptionPlan): string {
   const unit = plan.validity_unit || 'day'
   if (unit === 'month') return '包月订阅'
@@ -865,9 +960,10 @@ function buildSubscriptionDescription(plan: SubscriptionPlan): string {
 
 function buildSubscriptionGoods(plan: SubscriptionPlan): ShopGoods {
   const displayName = plan.product_name?.trim() || plan.name
+  const externalGoodsKey = plan.external_goods_key?.trim()
   return {
-    link: '',
-    goods_key: `subscription-plan-${plan.id}`,
+    link: externalGoodsKey ? buildShopUrl(`/item/${externalGoodsKey}`) : '',
+    goods_key: externalGoodsKey || `subscription-plan-${plan.id}`,
     name: displayName,
     price: Number(plan.price || 0),
     market_price: Number(plan.original_price || plan.price || 0),
@@ -963,6 +1059,54 @@ function openExternal(url: string, preferNewTab: boolean = false) {
   window.location.href = url
 }
 
+function isMobileDevice(): boolean {
+  if (typeof window === 'undefined') return false
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(window.navigator.userAgent)
+}
+
+function isWeChatBrowser(): boolean {
+  if (typeof window === 'undefined') return false
+  return /MicroMessenger/i.test(window.navigator.userAgent)
+}
+
+function handleInternalPaymentResult(result: CreateOrderResult, paymentType: string) {
+  const normalizedPaymentType = normalizeVisibleMethod(paymentType) || paymentType
+
+  if (result.client_secret) {
+    router.push({
+      path: '/payment/stripe',
+      query: {
+        order_id: String(result.order_id),
+        client_secret: result.client_secret,
+        method: normalizedPaymentType === 'wxpay' ? 'wechat_pay' : 'alipay',
+        resume_token: result.resume_token || undefined,
+      },
+    })
+    return
+  }
+
+  if (result.qr_code) {
+    router.push({
+      path: '/payment/qrcode',
+      query: {
+        order_id: String(result.order_id),
+        qr: result.qr_code,
+        payment_type: normalizedPaymentType,
+        expires_at: result.expires_at || undefined,
+      },
+    })
+    return
+  }
+
+  if (result.pay_url) {
+    appStore.showSuccess('订单已创建，正在打开支付页面')
+    openExternal(result.pay_url, true)
+    return
+  }
+
+  throw new Error('支付链接生成失败')
+}
+
 function navigateBack() {
   if (sourceUrl.value) {
     openExternal(sourceUrl.value, false)
@@ -984,19 +1128,97 @@ async function refreshShareQrCode() {
   }
 }
 
-async function postShopApi<T>(path: string, payload: Record<string, unknown>): Promise<T> {
-  const response = await fetch(buildShopUrl(path), {
-    method: 'POST',
-    mode: 'cors',
-    credentials: 'omit',
+function getStoredAuthToken(): string {
+  if (typeof window === 'undefined') return ''
+  return window.localStorage.getItem('auth_token')?.trim() || ''
+}
+
+function buildRechargeRequestHeaders(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...buildRechargeAuthHeaders(embeddedAuthToken.value, getStoredAuthToken()),
+  }
+}
+
+function createRechargeApiError(
+  message: string,
+  details?: Partial<RechargeApiError>,
+): RechargeApiError {
+  const error = new Error(message) as RechargeApiError
+  if (details) {
+    Object.assign(error, details)
+  }
+  return error
+}
+
+async function buildRechargeApiErrorFromResponse(
+  response: Response,
+  fallbackMessage: string,
+): Promise<RechargeApiError> {
+  try {
+    const payload = await response.json() as Partial<InternalApiResponse<unknown>> & Partial<ApiResponse<unknown>>
+    return createRechargeApiError(
+      payload.message || payload.msg || fallbackMessage,
+      {
+        code: payload.code,
+        reason: payload.reason,
+        status: response.status,
+        metadata: payload.metadata,
+      },
+    )
+  } catch {
+    return createRechargeApiError(fallbackMessage, { status: response.status })
+  }
+}
+
+async function fetchInternalApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api/v1${path}`, {
+    ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...buildRechargeRequestHeaders(),
+      ...(init?.headers || {}),
     },
+  })
+
+  if (!response.ok) {
+    throw await buildRechargeApiErrorFromResponse(response, `请求失败（${response.status}）`)
+  }
+
+  const result = (await response.json()) as InternalApiResponse<T>
+  if (result.code !== 0) {
+    throw createRechargeApiError(result.message || '请求失败', {
+      code: result.code,
+      reason: result.reason,
+      metadata: result.metadata,
+    })
+  }
+
+  return result.data
+}
+
+const rechargeShopProxyActions: Record<string, string> = {
+  '/shopApi/Shop/info': 'info',
+  '/shopApi/Shop/getUserChannel': 'channels',
+  '/shopApi/Shop/categoryList': 'categories',
+  '/shopApi/Shop/goodsList': 'goods',
+  '/shopApi/Shop/getGoodsPrice': 'price',
+  '/shopApi/Pay/order': 'order',
+}
+
+async function postShopApi<T>(path: string, payload: Record<string, unknown>): Promise<T> {
+  const action = rechargeShopProxyActions[path]
+  if (!action) {
+    throw new Error(`不支持的店铺请求：${path}`)
+  }
+
+  const response = await fetch(`/api/v1/payment/recharge-shop/${action}`, {
+    method: 'POST',
+    headers: buildRechargeRequestHeaders(),
     body: JSON.stringify(payload),
   })
 
   if (!response.ok) {
-    throw new Error(`请求失败（${response.status}）`)
+    throw await buildRechargeApiErrorFromResponse(response, `请求失败（${response.status}）`)
   }
 
   const result = (await response.json()) as ApiResponse<T>
@@ -1005,6 +1227,38 @@ async function postShopApi<T>(path: string, payload: Record<string, unknown>): P
   }
 
   return result.data
+}
+
+function showRechargePaymentError(
+  error: unknown,
+  fallbackMessage: string,
+  paymentMethod?: string,
+) {
+  if (paymentMethod) {
+    const descriptor = describePaymentScenarioError(error, {
+      paymentMethod,
+      isMobile: isMobileDevice(),
+      isWechatBrowser: isWeChatBrowser(),
+    })
+    if (descriptor) {
+      const hint = descriptor.hintKey ? t(descriptor.hintKey) : ''
+      appStore.showError(buildPaymentErrorToastMessage(t(descriptor.messageKey), hint))
+      return
+    }
+  }
+
+  appStore.showError(extractI18nErrorMessage(error, t, 'payment.errors', fallbackMessage))
+}
+
+function handleRechargeVerificationFallback(error: unknown, goods?: ShopGoods | null): boolean {
+  const code = extractApiErrorCode(error)
+  if (code !== 'PAYMENT_GATEWAY_VERIFICATION_REQUIRED' && code !== 'RECHARGE_SHOP_VERIFICATION_REQUIRED') {
+    return false
+  }
+
+  appStore.showInfo('当前支付通道需要在 pay.ldxp.cn 完成真人验证，已为你打开外部商品页，请在新页面完成验证和支付。')
+  openExternal(buildStorefrontFallbackUrl(goods), true)
+  return true
 }
 
 async function loadMerchantInfo() {
@@ -1022,32 +1276,51 @@ async function loadChannels() {
 
 async function loadSubscriptionPlans() {
   try {
-    const response = await paymentAPI.getCheckoutInfo()
-    const plans = Array.isArray(response.data?.plans) ? response.data.plans : []
+    const checkoutInfo = await fetchInternalApi<{
+      methods?: Record<string, MethodLimit>
+      plans?: SubscriptionPlan[]
+    }>('/payment/checkout-info')
+    checkoutPaymentMethods.value =
+      checkoutInfo.methods && typeof checkoutInfo.methods === 'object' ? checkoutInfo.methods : {}
+    const plans = Array.isArray(checkoutInfo.plans) ? checkoutInfo.plans : []
     subscriptionPlans.value = [...plans].sort((a, b) => {
       const left = typeof a.sort_order === 'number' ? a.sort_order : 0
       const right = typeof b.sort_order === 'number' ? b.sort_order : 0
       return left - right
     })
   } catch {
+    checkoutPaymentMethods.value = {}
     subscriptionPlans.value = []
   }
 }
 
+function buildSubscriptionCategory(): ShopCategory | null {
+  if (!hasSubscriptionGoods.value) return null
+  return {
+    id: SUBSCRIPTION_CATEGORY_ID,
+    name: '\u8ba2\u9605',
+    goods_count: subscriptionPlans.value.length,
+    synthetic_type: 'subscription',
+  }
+}
+
 async function loadCategories() {
-  const remoteCategories = await postShopApi<ShopCategory[]>('/shopApi/Shop/categoryList', {
-    token: shopToken.value,
-    goods_type: 'card',
-  })
+  let remoteCategories: ShopCategory[] = []
+  try {
+    remoteCategories = await postShopApi<ShopCategory[]>('/shopApi/Shop/categoryList', {
+      token: shopToken.value,
+      goods_type: 'card',
+    })
+  } catch (error) {
+    if (!hasSubscriptionGoods.value) {
+      throw error
+    }
+  }
 
   categories.value = [...remoteCategories]
-  if (hasSubscriptionGoods.value) {
-    categories.value.push({
-      id: SUBSCRIPTION_CATEGORY_ID,
-      name: '订阅',
-      goods_count: subscriptionPlans.value.length,
-      synthetic_type: 'subscription',
-    })
+  const subscriptionCategory = buildSubscriptionCategory()
+  if (subscriptionCategory) {
+    categories.value.push(subscriptionCategory)
   }
 
   if (!categories.value.length) {
@@ -1091,9 +1364,16 @@ async function loadGoods() {
       payload.category_id = selectedCategoryId.value
     }
 
-    const goodsPayload = await postShopApi<GoodsListPayload>('/shopApi/Shop/goodsList', payload)
-    const remoteGoods = goodsPayload.list || []
     const subscriptionGoods = activeKeywords.value ? filterSubscriptionGoodsByKeyword(activeKeywords.value) : []
+    let remoteGoods: ShopGoods[] = []
+    try {
+      const goodsPayload = await postShopApi<GoodsListPayload>('/shopApi/Shop/goodsList', payload)
+      remoteGoods = goodsPayload.list || []
+    } catch (error) {
+      if (!subscriptionGoods.length) {
+        throw error
+      }
+    }
     goodsList.value = [...subscriptionGoods, ...remoteGoods]
 
     if (!goodsList.value.some((goods) => goods.goods_key === selectedProductKey.value)) {
@@ -1211,7 +1491,7 @@ async function submitOrder() {
     return
   }
 
-  if (isSubscriptionGoods(selectedProduct.value)) {
+  if (isSubscriptionGoods(selectedProduct.value) && !canDirectOrderSubscriptionGoods(selectedProduct.value)) {
     if (!internalPaymentEnabled.value) {
       appStore.showInfo('订阅商品已展示，当前站内支付尚未开启，开启后即可直接购买')
       return
@@ -1246,7 +1526,7 @@ async function submitOrder() {
     return
   }
 
-  if (!selectedChannelId.value) {
+  if (!selectedChannel.value) {
     appStore.showError('请选择支付方式')
     return
   }
@@ -1254,6 +1534,34 @@ async function submitOrder() {
   ordering.value = true
 
   try {
+    if (isSubscriptionGoods(selectedProduct.value) && selectedInternalPaymentType.value) {
+      const paymentType = selectedInternalPaymentType.value
+      try {
+        const data = await fetchInternalApi<CreateOrderResult>('/payment/orders', {
+          method: 'POST',
+          body: JSON.stringify({
+            amount: selectedProduct.value.price,
+            payment_type: paymentType,
+            payment_source: paymentType === 'wxpay' && isWeChatBrowser()
+              ? 'wechat_in_app_resume'
+              : 'hosted_redirect',
+            order_type: 'subscription',
+            plan_id: selectedProduct.value.subscription_plan_id,
+            return_url: typeof window === 'undefined' ? '' : `${window.location.origin}/payment/result`,
+            is_mobile: isMobileDevice(),
+          }),
+        })
+        handleInternalPaymentResult(data, paymentType)
+        return
+      } catch (error) {
+        if (handleRechargeVerificationFallback(error, selectedProduct.value)) {
+          return
+        }
+        showRechargePaymentError(error, '创建订单失败', paymentType)
+        return
+      }
+    }
+
     const payload: Record<string, unknown> = {
       goods_key: selectedProduct.value.goods_key,
       quantity: quantity.value,
@@ -1283,7 +1591,10 @@ async function submitOrder() {
     appStore.showSuccess('订单已创建，正在打开支付页面')
     openExternal(data.payurl, true)
   } catch (error) {
-    appStore.showError((error as Error).message || '创建订单失败')
+    if (handleRechargeVerificationFallback(error, selectedProduct.value)) {
+      return
+    }
+    showRechargePaymentError(error, '创建订单失败', selectedChannel.value?.payment_type)
   } finally {
     ordering.value = false
   }
@@ -1299,9 +1610,20 @@ async function initializeStore() {
   loading.value = true
 
   try {
-    await Promise.all([loadMerchantInfo(), loadChannels(), loadSubscriptionPlans()])
+    const bootstrapResults = await Promise.allSettled([
+      loadMerchantInfo(),
+      loadChannels(),
+      loadSubscriptionPlans(),
+    ])
     await loadCategories()
     await loadPriceInfo()
+
+    const bootstrapError = bootstrapResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    )
+    if (bootstrapError && !categories.value.length && !hasSubscriptionGoods.value) {
+      throw bootstrapError.reason
+    }
   } catch (error) {
     appStore.showError((error as Error).message || '同步店铺失败')
   } finally {
@@ -1344,6 +1666,15 @@ watch(couponEnabled, (enabled) => {
     couponCode.value = ''
   }
 })
+
+watch(
+  displayedChannels,
+  (channelList) => {
+    if (channelList.some((channel) => channel.id === selectedChannelId.value)) return
+    selectedChannelId.value = channelList[0]?.id ?? null
+  },
+  { immediate: true },
+)
 
 watch([selectedProductKey, quantity, selectedChannelId, couponEnabled, couponCode], () => {
   void loadPriceInfo()

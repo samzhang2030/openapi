@@ -139,6 +139,10 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		tm = defaultOrderTimeoutMin
 	}
 	exp := time.Now().Add(time.Duration(tm) * time.Minute)
+	outTradeNo, err := s.allocateOutTradeNo(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
 	selectedInstanceID := ""
 	selectedProviderKey := ""
@@ -155,7 +159,7 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		SetPayAmount(payAmount).
 		SetFeeRate(feeRate).
 		SetRechargeCode("").
-		SetOutTradeNo(generateOutTradeNo()).
+		SetOutTradeNo(outTradeNo).
 		SetPaymentType(req.PaymentType).
 		SetPaymentTradeNo("").
 		SetOrderType(req.OrderType).
@@ -191,6 +195,21 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, fmt.Errorf("commit order transaction: %w", err)
 	}
 	return order, nil
+}
+
+func (s *PaymentService) allocateOutTradeNo(ctx context.Context, tx *dbent.Tx) (string, error) {
+	const maxAttempts = 5
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		candidate := generateOutTradeNo()
+		exists, err := tx.PaymentOrder.Query().Where(paymentorder.OutTradeNo(candidate)).Exist(ctx)
+		if err != nil {
+			return "", fmt.Errorf("check out_trade_no uniqueness: %w", err)
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("generate unique out_trade_no: exhausted %d attempts", maxAttempts)
 }
 
 func (s *PaymentService) checkPendingLimit(ctx context.Context, tx *dbent.Tx, userID int64, max int) error {
@@ -248,6 +267,11 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 	if providerKey == payment.TypeEasyPay {
 		if merchantID := strings.TrimSpace(sel.Config["pid"]); merchantID != "" {
 			snapshot["merchant_id"] = merchantID
+		}
+	}
+	if providerKey == payment.TypeLdxPayBridge {
+		if shopToken := strings.TrimSpace(sel.Config["shopToken"]); shopToken != "" {
+			snapshot["shop_token"] = shopToken
 		}
 	}
 
@@ -360,13 +384,13 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	}
 	subject := s.buildPaymentSubject(plan, limitAmount, cfg)
 	outTradeNo := order.OutTradeNo
-	canonicalReturnURL, err := CanonicalizeReturnURL(req.ReturnURL, req.SrcHost)
+	canonicalReturnURL, err := CanonicalizeReturnURL(req.ReturnURL, req.SrcHost, req.SrcURL)
 	if err != nil {
 		return nil, err
 	}
 	resumeToken := ""
 	if resume := s.paymentResume(); resume != nil {
-		if resume.isSigningConfigured() {
+		if canonicalReturnURL != "" && resume.isSigningConfigured() {
 			resumeToken, err = resume.CreateToken(ResumeTokenClaims{
 				OrderID:            order.ID,
 				UserID:             order.UserID,
@@ -380,7 +404,7 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 			}
 		}
 	}
-	providerReturnURL, err := buildPaymentReturnURL(canonicalReturnURL, order.ID, resumeToken)
+	providerReturnURL, err := buildPaymentReturnURL(canonicalReturnURL, order.ID, outTradeNo, resumeToken)
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +414,9 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		ClientIP:    req.ClientIP,
 		IsMobile:    req.IsMobile,
 		ReturnURL:   providerReturnURL,
-	}, sel, outTradeNo, payAmountStr, subject)
+		OrderType:   req.OrderType,
+		PlanID:      req.PlanID,
+	}, order, sel, outTradeNo, payAmountStr, subject)
 	pr, err := prov.CreatePayment(ctx, providerReq)
 	if err != nil {
 		slog.Error("[PaymentService] CreatePayment failed", "provider", sel.ProviderKey, "instance", sel.InstanceID, "error", err)
@@ -426,7 +452,14 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	return resp, nil
 }
 
-func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.InstanceSelection, orderID, amount, subject string) payment.CreatePaymentRequest {
+func buildProviderCreatePaymentRequest(req CreateOrderRequest, order *dbent.PaymentOrder, sel *payment.InstanceSelection, orderID, amount, subject string) payment.CreatePaymentRequest {
+	contact := ""
+	if order != nil {
+		contact = strings.TrimSpace(order.UserEmail)
+		if contact == "" {
+			contact = strings.TrimSpace(order.UserName)
+		}
+	}
 	return payment.CreatePaymentRequest{
 		OrderID:            orderID,
 		Amount:             amount,
@@ -437,6 +470,9 @@ func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.Inst
 		ClientIP:           req.ClientIP,
 		IsMobile:           req.IsMobile,
 		InstanceSubMethods: selectedInstanceSupportedTypes(sel),
+		OrderType:          req.OrderType,
+		PlanID:             req.PlanID,
+		Contact:            contact,
 	}
 }
 
@@ -480,6 +516,9 @@ func (s *PaymentService) maybeBuildWeChatOAuthRequiredResponseForSelection(ctx c
 func (s *PaymentService) buildWeChatOAuthRequiredResponse(ctx context.Context, req CreateOrderRequest, amount, payAmount, feeRate float64) (*CreateOrderResponse, error) {
 	appID, _, err := s.getWeChatPaymentOAuthCredential(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.paymentResume().ensureSigningKey(); err != nil {
 		return nil, err
 	}
 
@@ -547,6 +586,17 @@ func (s *PaymentService) getWeChatPaymentOAuthCredential(ctx context.Context) (s
 func classifyCreatePaymentError(req CreateOrderRequest, providerKey string, err error) error {
 	if err == nil {
 		return nil
+	}
+	var verificationErr *provider.LdxVerificationRequiredError
+	if errors.As(err, &verificationErr) {
+		return infraerrors.ServiceUnavailable(
+			"PAYMENT_GATEWAY_VERIFICATION_REQUIRED",
+			"payment gateway requires interactive verification",
+		).WithMetadata(map[string]string{
+			"provider": providerKey,
+			"path":     verificationErr.Path,
+			"trace_id": verificationErr.TraceID,
+		})
 	}
 	if providerKey == payment.TypeWxpay &&
 		payment.GetBasePaymentType(req.PaymentType) == payment.TypeWxpay &&

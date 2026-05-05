@@ -406,7 +406,7 @@ func buildVisibleMethodSourceAvailability(instances []*dbent.PaymentProviderInst
 	available := make(map[string]bool, 4)
 	for _, inst := range instances {
 		switch inst.ProviderKey {
-		case payment.TypeAlipay:
+		case payment.TypeAlipay, payment.TypeLdxPayBridge:
 			if inst.SupportedTypes == "" || payment.InstanceSupportsType(inst.SupportedTypes, payment.TypeAlipay) || payment.InstanceSupportsType(inst.SupportedTypes, payment.TypeAlipayDirect) {
 				available[VisibleMethodSourceOfficialAlipay] = true
 			}

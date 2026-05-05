@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAppStore } from '@/stores/app'
+import { checkUpdates } from '@/api/admin/system'
 import { getPublicSettings } from '@/api/auth'
 
 // Mock API 模块
@@ -246,6 +247,34 @@ describe('useAppStore', () => {
       expect(store.sidebarCollapsed).toBe(false)
       expect(store.loading).toBe(false)
       expect(store.toasts).toHaveLength(0)
+    })
+  })
+
+  // --- 版本信息 ---
+
+  describe('版本信息加载', () => {
+    it('fetchVersion 会缓存在线更新可用性和手动更新提示', async () => {
+      vi.mocked(checkUpdates).mockResolvedValue({
+        current_version: '1.0.0',
+        latest_version: '1.1.0',
+        has_update: true,
+        release_info: undefined,
+        cached: false,
+        warning: undefined,
+        build_type: 'release',
+        can_auto_update: false,
+        update_hint: 'Manual update required',
+      })
+
+      const store = useAppStore()
+      const result = await store.fetchVersion(true)
+
+      expect(result?.can_auto_update).toBe(false)
+      expect(store.currentVersion).toBe('1.0.0')
+      expect(store.latestVersion).toBe('1.1.0')
+      expect(store.hasUpdate).toBe(true)
+      expect(store.canAutoUpdate).toBe(false)
+      expect(store.updateHint).toBe('Manual update required')
     })
   })
 

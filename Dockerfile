@@ -12,15 +12,11 @@ ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
-ARG NODE_MAX_OLD_SPACE_SIZE=4096
 
 # -----------------------------------------------------------------------------
 # Stage 1: Frontend Builder
 # -----------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS frontend-builder
-
-ARG NODE_MAX_OLD_SPACE_SIZE
-ENV NODE_OPTIONS=--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}
 
 WORKDIR /app/frontend
 
@@ -96,6 +92,10 @@ LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
+    bash \
+    git \
+    docker-cli \
+    docker-cli-compose \
     su-exec \
     libpq \
     zstd-libs \

@@ -5,8 +5,6 @@ package web
 import (
 	"bytes"
 	"context"
-	"errors"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,32 +18,6 @@ import (
 
 func init() {
 	gin.SetMode(gin.TestMode)
-}
-
-func mustFindEmbeddedAssetPath(t *testing.T) string {
-	t.Helper()
-
-	distFS, err := fs.Sub(frontendFS, "dist")
-	require.NoError(t, err)
-
-	stopWalk := errors.New("stop walk")
-	assetPath := ""
-
-	err = fs.WalkDir(distFS, ".", func(path string, d fs.DirEntry, walkErr error) error {
-		require.NoError(t, walkErr)
-		if d.IsDir() {
-			return nil
-		}
-		if strings.HasPrefix(path, "assets/") {
-			assetPath = "/" + path
-			return stopWalk
-		}
-		return nil
-	})
-	require.True(t, err == nil || errors.Is(err, stopWalk))
-	require.NotEmpty(t, assetPath)
-
-	return assetPath
 }
 
 func TestInjectSiteTitle(t *testing.T) {
@@ -462,6 +434,8 @@ func TestFrontendServer_Middleware(t *testing.T) {
 			"/api/v1/users",
 			"/v1/models",
 			"/v1beta/chat",
+			"/backend-api/codex/responses",
+			"/backend-api/codex/responses/compact",
 			"/antigravity/test",
 			"/setup/init",
 			"/health",
@@ -566,26 +540,6 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
-		assert.Empty(t, w.Header().Get("Cache-Control"))
-	})
-
-	t.Run("sets_immutable_cache_control_for_hashed_assets", func(t *testing.T) {
-		provider := &mockSettingsProvider{
-			settings: map[string]string{"test": "value"},
-		}
-
-		server, err := NewFrontendServer(provider)
-		require.NoError(t, err)
-
-		router := gin.New()
-		router.Use(server.Middleware())
-
-		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, mustFindEmbeddedAssetPath(t), nil)
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Equal(t, immutableStaticAssetCacheControl, w.Header().Get("Cache-Control"))
 	})
 }
 
@@ -640,21 +594,6 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
-		assert.Empty(t, w.Header().Get("Cache-Control"))
-	})
-
-	t.Run("sets_immutable_cache_control_for_hashed_assets", func(t *testing.T) {
-		middleware := ServeEmbeddedFrontend()
-
-		router := gin.New()
-		router.Use(middleware)
-
-		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, mustFindEmbeddedAssetPath(t), nil)
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Equal(t, immutableStaticAssetCacheControl, w.Header().Get("Cache-Control"))
 	})
 
 	t.Run("serves_index_html_for_root", func(t *testing.T) {
@@ -699,6 +638,8 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 			"/api/users",
 			"/v1/models",
 			"/v1beta/chat",
+			"/backend-api/codex/responses",
+			"/backend-api/codex/responses/compact",
 			"/antigravity/test",
 			"/setup/init",
 			"/health",

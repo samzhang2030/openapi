@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -115,6 +118,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 	// Fetch plans with group info
 	plans, _ := h.configService.ListPlansForSale(ctx)
 	groupInfo := h.configService.GetGroupInfoMap(ctx, plans)
+	ldxPlanGoodsMap := h.configService.GetLdxPayBridgePlanGoodsMap(ctx)
 	planList := make([]checkoutPlan, 0, len(plans))
 	for _, p := range plans {
 		gi := groupInfo[p.GroupID]
@@ -126,7 +130,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 			ModelScopes: gi.ModelScopes,
 			Name:        p.Name, Description: p.Description, Price: p.Price, OriginalPrice: p.OriginalPrice,
 			ValidityDays: p.ValidityDays, ValidityUnit: p.ValidityUnit, Features: parseFeatures(p.Features),
-			ProductName: p.ProductName,
+			ProductName: p.ProductName, ExternalGoodsKey: strings.TrimSpace(ldxPlanGoodsMap[int64(p.ID)]),
 		})
 	}
 
@@ -175,6 +179,7 @@ type checkoutPlan struct {
 	ValidityUnit    string   `json:"validity_unit"`
 	Features        []string `json:"features"`
 	ProductName     string   `json:"product_name"`
+	ExternalGoodsKey string  `json:"external_goods_key,omitempty"`
 }
 
 // parseFeatures splits a newline-separated features string into a string slice.
@@ -203,6 +208,77 @@ func (h *PaymentHandler) GetLimits(c *gin.Context) {
 		return
 	}
 	response.Success(c, resp)
+}
+
+var rechargeShopActionPaths = map[string]string{
+	"info":       "/shopApi/Shop/info",
+	"channels":   "/shopApi/Shop/getUserChannel",
+	"categories": "/shopApi/Shop/categoryList",
+	"goods":      "/shopApi/Shop/goodsList",
+	"price":      "/shopApi/Shop/getGoodsPrice",
+	"order":      "/shopApi/Pay/order",
+}
+
+// ProxyRechargeShop proxies the pay.ldxp.cn storefront APIs through the backend
+// because direct browser requests are blocked upstream with HTTP 403.
+// POST /api/v1/payment/recharge-shop/:action
+func (h *PaymentHandler) ProxyRechargeShop(c *gin.Context) {
+	path, ok := rechargeShopActionPaths[strings.TrimSpace(c.Param("action"))]
+	if !ok {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_RECHARGE_SHOP_ACTION", "unsupported recharge shop action"))
+		return
+	}
+
+	cfg := h.configService.GetLdxPayBridgeConfig(c.Request.Context())
+	if len(cfg) == 0 {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("RECHARGE_SHOP_PROXY_UNAVAILABLE", "recharge shop proxy is not configured"))
+		return
+	}
+
+	client, err := provider.NewLdxStorefrontClient(cfg)
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("RECHARGE_SHOP_PROXY_UNAVAILABLE", err.Error()))
+		return
+	}
+
+	payload := make(map[string]any)
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			response.BadRequest(c, "Invalid request: "+err.Error())
+			return
+		}
+	}
+	if payload == nil {
+		payload = make(map[string]any)
+	}
+
+	switch path {
+	case "/shopApi/Shop/info", "/shopApi/Shop/getUserChannel", "/shopApi/Shop/categoryList", "/shopApi/Shop/goodsList":
+		if token, _ := payload["token"].(string); strings.TrimSpace(token) == "" {
+			payload["token"] = client.ShopToken()
+		}
+	}
+
+	body, err := client.PostJSONRaw(c.Request.Context(), path, payload)
+	if err != nil {
+		var verificationErr *provider.LdxVerificationRequiredError
+		if errors.As(err, &verificationErr) {
+			response.ErrorFrom(c, infraerrors.ServiceUnavailable(
+				"RECHARGE_SHOP_VERIFICATION_REQUIRED",
+				"recharge shop upstream requires interactive verification",
+			).WithMetadata(map[string]string{
+				"path":     verificationErr.Path,
+				"trace_id": verificationErr.TraceID,
+			}))
+			return
+		}
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("RECHARGE_SHOP_PROXY_ERROR", err.Error()))
+		return
+	}
+
+	c.Status(http.StatusOK)
+	c.Header("Content-Type", "application/json; charset=utf-8")
+	_, _ = c.Writer.Write(body)
 }
 
 // CreateOrderRequest is the request body for creating a payment order.
@@ -454,29 +530,65 @@ func (h *PaymentHandler) VerifyOrder(c *gin.Context) {
 // PublicOrderResult is the limited order info returned by the public verify endpoint.
 // No user details are exposed — only payment status information.
 type PublicOrderResult struct {
-	ID          int64   `json:"id"`
-	OutTradeNo  string  `json:"out_trade_no"`
-	Amount      float64 `json:"amount"`
-	PayAmount   float64 `json:"pay_amount"`
-	PaymentType string  `json:"payment_type"`
-	OrderType   string  `json:"order_type"`
-	Status      string  `json:"status"`
+	ID                  int64      `json:"id"`
+	OutTradeNo          string     `json:"out_trade_no"`
+	Amount              float64    `json:"amount"`
+	PayAmount           float64    `json:"pay_amount"`
+	FeeRate             float64    `json:"fee_rate"`
+	PaymentType         string     `json:"payment_type"`
+	OrderType           string     `json:"order_type"`
+	Status              string     `json:"status"`
+	CreatedAt           time.Time  `json:"created_at"`
+	ExpiresAt           time.Time  `json:"expires_at"`
+	PaidAt              *time.Time `json:"paid_at,omitempty"`
+	CompletedAt         *time.Time `json:"completed_at,omitempty"`
+	RefundAmount        float64    `json:"refund_amount"`
+	RefundReason        *string    `json:"refund_reason,omitempty"`
+	RefundRequestedAt   *time.Time `json:"refund_requested_at,omitempty"`
+	RefundRequestedBy   *string    `json:"refund_requested_by,omitempty"`
+	RefundRequestReason *string    `json:"refund_request_reason,omitempty"`
+	PlanID              *int64     `json:"plan_id,omitempty"`
 }
 
-var errPaymentPublicOrderVerifyRemoved = infraerrors.New(
-	http.StatusGone,
-	"PAYMENT_PUBLIC_ORDER_VERIFY_REMOVED",
-	"public payment order verification by out_trade_no has been removed; use resume_token recovery instead",
-).WithMetadata(map[string]string{
-	"replacement_endpoint": "/api/v1/payment/public/orders/resolve",
-	"replacement_field":    "resume_token",
-})
+func buildPublicOrderResult(order *dbent.PaymentOrder) PublicOrderResult {
+	return PublicOrderResult{
+		ID:                  order.ID,
+		OutTradeNo:          order.OutTradeNo,
+		Amount:              order.Amount,
+		PayAmount:           order.PayAmount,
+		FeeRate:             order.FeeRate,
+		PaymentType:         order.PaymentType,
+		OrderType:           order.OrderType,
+		Status:              order.Status,
+		CreatedAt:           order.CreatedAt,
+		ExpiresAt:           order.ExpiresAt,
+		PaidAt:              order.PaidAt,
+		CompletedAt:         order.CompletedAt,
+		RefundAmount:        order.RefundAmount,
+		RefundReason:        order.RefundReason,
+		RefundRequestedAt:   order.RefundRequestedAt,
+		RefundRequestedBy:   order.RefundRequestedBy,
+		RefundRequestReason: order.RefundRequestReason,
+		PlanID:              order.PlanID,
+	}
+}
 
-// VerifyOrderPublic is kept as a compatibility shim for the removed anonymous
-// out_trade_no lookup endpoint and always returns HTTP 410 Gone.
+// VerifyOrderPublic keeps the legacy anonymous out_trade_no lookup available as
+// a compatibility path for older result pages and staggered deploys.
 // POST /api/v1/payment/public/orders/verify
 func (h *PaymentHandler) VerifyOrderPublic(c *gin.Context) {
-	response.ErrorFrom(c, errPaymentPublicOrderVerifyRemoved)
+	var req VerifyOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	order, err := h.paymentService.VerifyOrderPublic(c.Request.Context(), req.OutTradeNo)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, buildPublicOrderResult(order))
 }
 
 // ResolveOrderPublicByResumeToken resolves a payment order from a signed resume token.
@@ -493,15 +605,7 @@ func (h *PaymentHandler) ResolveOrderPublicByResumeToken(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, PublicOrderResult{
-		ID:          order.ID,
-		OutTradeNo:  order.OutTradeNo,
-		Amount:      order.Amount,
-		PayAmount:   order.PayAmount,
-		PaymentType: order.PaymentType,
-		OrderType:   order.OrderType,
-		Status:      order.Status,
-	})
+	response.Success(c, buildPublicOrderResult(order))
 }
 
 // requireAuth extracts the authenticated subject from the context.

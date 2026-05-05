@@ -9,10 +9,6 @@ redis_data/
 
 # Environment configuration (contains sensitive information)
 .env
-docker-compose.override.yml
-
-# Local deployment backups
-.backups/
 
 # Backup files
 *.backup

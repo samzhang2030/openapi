@@ -112,6 +112,7 @@ import {
   isCrossOriginUrl,
   resolveInternalNavigationPath,
 } from '@/utils/embedded-url'
+import { appendRechargeAccessToken, resolveRechargeAuthToken } from '@/utils/recharge-auth'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -124,6 +125,12 @@ const pageTheme = ref<'light' | 'dark'>('light')
 let themeObserver: MutationObserver | null = null
 
 const menuItemId = computed(() => route.params.id as string)
+const embeddedAuthToken = computed(() =>
+  resolveRechargeAuthToken(
+    typeof route.query.token === 'string' ? route.query.token : '',
+    authStore.token,
+  ),
+)
 
 const menuItem = computed(() => {
   const id = menuItemId.value
@@ -143,14 +150,19 @@ const embeddedUrl = computed(() => {
   return buildEmbeddedUrl(
     menuItem.value.url,
     authStore.user?.id,
-    authStore.token,
+    embeddedAuthToken.value,
     pageTheme.value,
     locale.value,
   )
 })
 
 const externalUrl = computed(() => menuItem.value?.url?.trim() ?? '')
-const internalAppPath = computed(() => resolveInternalNavigationPath(externalUrl.value))
+const internalAppPath = computed(() =>
+  appendRechargeAccessToken(
+    resolveInternalNavigationPath(externalUrl.value),
+    embeddedAuthToken.value,
+  ),
+)
 
 const isValidUrl = computed(() => {
   const url = embeddedUrl.value

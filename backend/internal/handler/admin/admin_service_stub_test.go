@@ -183,6 +183,17 @@ func (s *stubAdminService) GetUserUsageStats(ctx context.Context, userID int64, 
 	return map[string]any{"user_id": userID}, nil
 }
 
+func (s *stubAdminService) GetUserRPMStatus(ctx context.Context, userID int64) (*service.UserRPMStatus, error) {
+	user, err := s.GetUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &service.UserRPMStatus{
+		UserRPMUsed:  0,
+		UserRPMLimit: user.RPMLimit,
+	}, nil
+}
+
 func (s *stubAdminService) BindUserAuthIdentity(ctx context.Context, userID int64, input service.AdminBindAuthIdentityInput) (*service.AdminBoundAuthIdentity, error) {
 	s.boundAuthIdentityFor = userID
 	copied := input
@@ -273,6 +284,14 @@ func (s *stubAdminService) ClearGroupRateMultipliers(_ context.Context, _ int64)
 }
 
 func (s *stubAdminService) BatchSetGroupRateMultipliers(_ context.Context, _ int64, _ []service.GroupRateMultiplierInput) error {
+	return nil
+}
+
+func (s *stubAdminService) ClearGroupRPMOverrides(_ context.Context, _ int64) error {
+	return nil
+}
+
+func (s *stubAdminService) BatchSetGroupRPMOverrides(_ context.Context, _ int64, _ []service.GroupRPMOverrideInput) error {
 	return nil
 }
 
@@ -541,6 +560,22 @@ func (s *stubAdminService) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 				}
 			}
 			return &service.AdminUpdateAPIKeyGroupIDResult{APIKey: &k}, nil
+		}
+	}
+	return nil, service.ErrAPIKeyNotFound
+}
+
+func (s *stubAdminService) AdminResetAPIKeyRateLimitUsage(ctx context.Context, keyID int64) (*service.APIKey, error) {
+	for i := range s.apiKeys {
+		if s.apiKeys[i].ID == keyID {
+			s.apiKeys[i].Usage5h = 0
+			s.apiKeys[i].Usage1d = 0
+			s.apiKeys[i].Usage7d = 0
+			s.apiKeys[i].Window5hStart = nil
+			s.apiKeys[i].Window1dStart = nil
+			s.apiKeys[i].Window7dStart = nil
+			k := s.apiKeys[i]
+			return &k, nil
 		}
 	}
 	return nil, service.ErrAPIKeyNotFound

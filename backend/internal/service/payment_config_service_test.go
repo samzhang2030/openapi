@@ -304,6 +304,19 @@ func TestBuildVisibleMethodSourceAvailability(t *testing.T) {
 	}
 }
 
+func TestBuildVisibleMethodSourceAvailabilityIncludesLdxPayBridge(t *testing.T) {
+	t.Parallel()
+
+	instances := []*dbent.PaymentProviderInstance{
+		{ProviderKey: payment.TypeLdxPayBridge, SupportedTypes: "alipay"},
+	}
+
+	got := buildVisibleMethodSourceAvailability(instances)
+	if !got[VisibleMethodSourceOfficialAlipay] {
+		t.Fatalf("expected %q to be available", VisibleMethodSourceOfficialAlipay)
+	}
+}
+
 func TestGetPaymentConfigKeepsStoredEnabledTypes(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)

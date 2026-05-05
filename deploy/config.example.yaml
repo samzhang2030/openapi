@@ -26,15 +26,6 @@ server:
   frontend_url: ""
   # Trusted proxies for X-Forwarded-For parsing (CIDR/IP). Empty disables trusted proxies.
   # 信任的代理地址（CIDR/IP 格式），用于解析 X-Forwarded-For 头。留空则禁用代理信任。
-  # If you are behind Nginx/Caddy plus Docker, restore the real client IP at the reverse proxy
-  # first (for example Cloudflare real_ip), then trust only the local proxy hop here.
-  # 如果部署在 Nginx/Caddy + Docker 后面，请先在反向代理层恢复真实客户端 IP
-  # （例如配置 Cloudflare real_ip），然后这里只信任本机代理跳点。
-  # Example:
-  # trusted_proxies:
-  #   - "127.0.0.1/32"
-  #   - "::1/128"
-  #   - "172.18.0.0/16"
   trusted_proxies: []
   # Global max request body size in bytes (default: 256MB)
   # 全局最大请求体大小（字节，默认 256MB）
@@ -850,7 +841,7 @@ linuxdo_connect:
   frontend_redirect_url: "/auth/linuxdo/callback"
   token_auth_method: "client_secret_post" # client_secret_post | client_secret_basic | none
   # 注意：当 token_auth_method=none（public client）时，必须启用 PKCE
-  use_pkce: false
+  use_pkce: true
   userinfo_email_path: ""
   userinfo_id_path: ""
   userinfo_username_path: ""
@@ -1068,3 +1059,16 @@ update:
   # Leave empty for direct connection (recommended for overseas servers)
   # 留空表示直连（适用于海外服务器）
   proxy_url: ""
+  # Optional: external updater for fork/local-image deployments.
+  # 可选：用于 fork/本地镜像部署的一键自动更新脚本。
+  # Requirements:
+  # 1. Mount /var/run/docker.sock into the sub2api container
+  # 2. Bind-mount the host repo into the container at the SAME absolute path
+  # 3. Point this path to the host-side update script
+  external_updater_command: ""
+  # Working directory for the external updater. Usually the host repo root.
+  # 外部更新脚本的工作目录，通常为宿主机仓库根目录。
+  external_updater_working_directory: ""
+  # Max helper runtime in seconds.
+  # helper 容器的最长运行时间（秒）。
+  external_updater_helper_timeout_seconds: 1800

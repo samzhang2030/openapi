@@ -22,8 +22,6 @@ import (
 const (
 	// NonceHTMLPlaceholder is the placeholder for nonce in HTML script tags
 	NonceHTMLPlaceholder = "__CSP_NONCE_VALUE__"
-	// immutableStaticAssetCacheControl is used for fingerprinted frontend assets.
-	immutableStaticAssetCacheControl = "public, max-age=31536000, immutable"
 )
 
 //go:embed all:dist
@@ -106,7 +104,6 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 		}
 
 		// Try local override first
-		applyStaticAssetHeaders(c, cleanPath)
 		if s.tryServeOverride(c, cleanPath) {
 			return
 		}
@@ -272,7 +269,6 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 		if file, err := distFS.Open(cleanPath); err == nil {
 			_ = file.Close()
 			// Try local override first
-			applyStaticAssetHeaders(c, cleanPath)
 			if tryServeOverrideFile(c, overrideDir, cleanPath) {
 				return
 			}
@@ -300,25 +296,18 @@ func tryServeOverrideFile(c *gin.Context, overrideDir, cleanPath string) bool {
 	return true
 }
 
-func applyStaticAssetHeaders(c *gin.Context, cleanPath string) {
-	if c == nil {
-		return
-	}
-	if strings.HasPrefix(cleanPath, "assets/") {
-		c.Header("Cache-Control", immutableStaticAssetCacheControl)
-	}
-}
-
 func shouldBypassEmbeddedFrontend(path string) bool {
 	trimmed := strings.TrimSpace(path)
 	return strings.HasPrefix(trimmed, "/api/") ||
 		strings.HasPrefix(trimmed, "/v1/") ||
 		strings.HasPrefix(trimmed, "/v1beta/") ||
+		strings.HasPrefix(trimmed, "/backend-api/") ||
 		strings.HasPrefix(trimmed, "/antigravity/") ||
 		strings.HasPrefix(trimmed, "/setup/") ||
 		trimmed == "/health" ||
 		trimmed == "/responses" ||
-		strings.HasPrefix(trimmed, "/responses/")
+		strings.HasPrefix(trimmed, "/responses/") ||
+		strings.HasPrefix(trimmed, "/images/")
 }
 
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {

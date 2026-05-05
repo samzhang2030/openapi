@@ -30,6 +30,7 @@ func RegisterPaymentRoutes(
 		authenticated.GET("/plans", paymentHandler.GetPlans)
 		authenticated.GET("/channels", paymentHandler.GetChannels)
 		authenticated.GET("/limits", paymentHandler.GetLimits)
+		authenticated.POST("/recharge-shop/:action", paymentHandler.ProxyRechargeShop)
 
 		orders := authenticated.Group("/orders")
 		{
@@ -44,9 +45,9 @@ func RegisterPaymentRoutes(
 	}
 
 	// --- Public payment endpoints (no auth) ---
-	// Signed resume-token recovery is the supported public lookup path.
-	// The legacy anonymous out_trade_no verify endpoint is kept only as a
-	// compatibility shim that returns HTTP 410 Gone.
+	// Signed resume-token recovery is the preferred public lookup path.
+	// The legacy anonymous out_trade_no verify endpoint remains available as a
+	// persisted-state compatibility path for staggered upgrades.
 	public := v1.Group("/payment/public")
 	{
 		public.POST("/orders/verify", paymentHandler.VerifyOrderPublic)

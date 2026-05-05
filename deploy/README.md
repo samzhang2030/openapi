@@ -41,13 +41,23 @@ If you deploy from your own fork and want production to run a locally built imag
 What it does:
 
 - fetches the latest `origin/main`
-- preserves the server-local `deploy/docker-compose.yml`
+- preserves server-local tracked changes before the fast-forward update
 - builds a clean image from the target git commit
 - writes `deploy/docker-compose.override.yml` with that image tag
 - restarts only `sub2api`
 - verifies container health
 
 This is useful for deployments like `samzhang2030/openapi`, where production should track fork-specific fixes instead of only upstream Docker Hub images.
+
+To let the admin UI trigger that script directly from the running container, the `sub2api` service also needs:
+
+- `/var/run/docker.sock:/var/run/docker.sock`
+- the host repo bind-mounted into the container at the same absolute path, for example `/home/ubuntu/bridgemind:/home/ubuntu/bridgemind`
+- `UPDATE_EXTERNAL_UPDATER_COMMAND=/home/ubuntu/bridgemind/deploy/ops/update_production.sh`
+- `UPDATE_EXTERNAL_UPDATER_WORKING_DIRECTORY=/home/ubuntu/bridgemind`
+- `UPDATE_EXTERNAL_UPDATER_HELPER_TIMEOUT_SECONDS=1800`
+
+Without those mounts/env vars, the UI will still detect updates but will fall back to manual update hints.
 
 ### Method 1: One-Click Deployment (Recommended)
 

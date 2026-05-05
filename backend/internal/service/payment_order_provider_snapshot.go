@@ -17,6 +17,7 @@ type paymentOrderProviderSnapshot struct {
 	PaymentMode        string
 	MerchantAppID      string
 	MerchantID         string
+	ShopToken          string
 	Currency           string
 }
 
@@ -32,6 +33,7 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		PaymentMode:        psSnapshotStringValue(order.ProviderSnapshot["payment_mode"]),
 		MerchantAppID:      psSnapshotStringValue(order.ProviderSnapshot["merchant_app_id"]),
 		MerchantID:         psSnapshotStringValue(order.ProviderSnapshot["merchant_id"]),
+		ShopToken:          psSnapshotStringValue(order.ProviderSnapshot["shop_token"]),
 		Currency:           psSnapshotStringValue(order.ProviderSnapshot["currency"]),
 	}
 	if snapshot.SchemaVersion == 0 &&
@@ -40,6 +42,7 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		snapshot.PaymentMode == "" &&
 		snapshot.MerchantAppID == "" &&
 		snapshot.MerchantID == "" &&
+		snapshot.ShopToken == "" &&
 		snapshot.Currency == "" {
 		return nil
 	}
@@ -186,6 +189,16 @@ func validateProviderSnapshotMetadata(order *dbent.PaymentOrder, providerKey str
 			}
 			if !strings.EqualFold(expected, actual) {
 				return fmt.Errorf("easypay pid mismatch: expected %s, got %s", expected, actual)
+			}
+		}
+	case payment.TypeLdxPayBridge:
+		if expected := strings.TrimSpace(snapshot.ShopToken); expected != "" {
+			actual := strings.TrimSpace(metadata["shop_token"])
+			if actual == "" {
+				return fmt.Errorf("ldxpaybridge shop_token missing")
+			}
+			if !strings.EqualFold(expected, actual) {
+				return fmt.Errorf("ldxpaybridge shop_token mismatch: expected %s, got %s", expected, actual)
 			}
 		}
 	}

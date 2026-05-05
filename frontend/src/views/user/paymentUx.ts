@@ -100,6 +100,13 @@ export function describePaymentScenarioError(
     }
   }
 
+  if (method === 'alipay' && code === 'PAYMENT_GATEWAY_VERIFICATION_REQUIRED') {
+    return {
+      messageKey: 'payment.errors.alipayVerificationRequired',
+      hintKey: 'payment.errors.alipayVerificationRequiredHint',
+    }
+  }
+
   if (method === 'alipay' && (code === 'PAYMENT_GATEWAY_ERROR' || code === 'UNHANDLED_PAYMENT_SCENARIO')) {
     return {
       messageKey: context.isMobile

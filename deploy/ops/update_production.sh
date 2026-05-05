@@ -41,6 +41,7 @@ SERVICE_NAME="${SERVICE_NAME:-sub2api}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-openapi-prod}"
 NODE_MAX_OLD_SPACE_SIZE="${NODE_MAX_OLD_SPACE_SIZE:-4096}"
 FORCE_BUILD="${FORCE_BUILD:-0}"
+ALLOW_DIRTY_OVERLAY="${ALLOW_DIRTY_OVERLAY:-0}"
 LOCAL_HEALTH_URL="${LOCAL_HEALTH_URL:-http://127.0.0.1:8080/health}"
 PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:-}"
 OVERRIDE_FILE="${DEPLOY_DIR}/docker-compose.override.yml"
@@ -51,10 +52,22 @@ BACKUP_DIR="${BACKUP_ROOT}/update-${TIMESTAMP}"
 RELEASE_DIR=""
 TARGET_FULL_SHA=""
 TARGET_SHORT_SHA=""
+DIRTY_TRACKED_PATHS=""
+DIRTY_TRACKED_LIST_FILE=""
+DIRTY_TRACKED_TAR=""
+UNTRACKED_PATHS=""
+UNTRACKED_LIST_FILE=""
+UNTRACKED_TAR=""
+WORKTREE_CLEANED_FOR_MERGE=0
+PRESERVED_FILES_RESTORED=0
 
 cleanup() {
   if [ -n "${RELEASE_DIR}" ] && [ -d "${RELEASE_DIR}" ]; then
     rm -rf "${RELEASE_DIR}"
+  fi
+  if [ "${WORKTREE_CLEANED_FOR_MERGE}" = "1" ] && [ "${PRESERVED_FILES_RESTORED}" = "0" ]; then
+    print_warning "Restoring preserved local files after interrupted update..."
+    restore_local_files || true
   fi
 }
 
@@ -72,13 +85,28 @@ http_get() {
 }
 
 ensure_repo_state() {
-  local dirty_tracked
-  dirty_tracked="$(git status --porcelain --untracked-files=no || true)"
-  dirty_tracked="$(printf '%s\n' "${dirty_tracked}" | grep -vE '^[ MADRCU?]{2} deploy/docker-compose\.yml$' | grep -vE '^[ MADRCU?]{2} deploy/docker-compose\.override\.yml$' || true)"
+  DIRTY_TRACKED_PATHS="$(git ls-files -m -d || true)"
+  if [ -n "${DIRTY_TRACKED_PATHS}" ] && [ "${ALLOW_DIRTY_OVERLAY}" = "1" ]; then
+    print_warning "Preserving tracked local changes during update:"
+    printf '%s\n' "${DIRTY_TRACKED_PATHS}"
+  fi
 
-  if [ -n "${dirty_tracked}" ]; then
-    print_error "Tracked local changes outside deploy compose files would make update unsafe:"
-    printf '%s\n' "${dirty_tracked}" >&2
+  UNTRACKED_PATHS="$(git ls-files --others --exclude-standard || true)"
+  if [ -n "${UNTRACKED_PATHS}" ] && [ "${ALLOW_DIRTY_OVERLAY}" = "1" ]; then
+    print_warning "Including untracked local files in build context:"
+    printf '%s\n' "${UNTRACKED_PATHS}"
+  fi
+
+  if [ "${ALLOW_DIRTY_OVERLAY}" != "1" ] && { [ -n "${DIRTY_TRACKED_PATHS}" ] || [ -n "${UNTRACKED_PATHS}" ]; }; then
+    print_error "Refusing to build from a dirty worktree. Commit/stash changes first, or set ALLOW_DIRTY_OVERLAY=1 for an explicit override."
+    if [ -n "${DIRTY_TRACKED_PATHS}" ]; then
+      print_error "Tracked changes:"
+      printf '%s\n' "${DIRTY_TRACKED_PATHS}" >&2
+    fi
+    if [ -n "${UNTRACKED_PATHS}" ]; then
+      print_error "Untracked files:"
+      printf '%s\n' "${UNTRACKED_PATHS}" >&2
+    fi
     exit 1
   fi
 }
@@ -105,6 +133,8 @@ check_untracked_conflicts() {
 
 backup_local_files() {
   mkdir -p "${BACKUP_DIR}"
+  DIRTY_TRACKED_LIST_FILE="${BACKUP_DIR}/dirty-tracked-files.txt"
+  DIRTY_TRACKED_TAR="${BACKUP_DIR}/dirty-tracked-files.tar"
 
   if [ -f "${LOCAL_COMPOSE_FILE}" ]; then
     cp -a "${LOCAL_COMPOSE_FILE}" "${BACKUP_DIR}/docker-compose.yml"
@@ -113,11 +143,49 @@ backup_local_files() {
   if [ -f "${OVERRIDE_FILE}" ]; then
     cp -a "${OVERRIDE_FILE}" "${BACKUP_DIR}/docker-compose.override.yml"
   fi
+
+  if [ -n "${DIRTY_TRACKED_PATHS}" ]; then
+    printf '%s\n' "${DIRTY_TRACKED_PATHS}" > "${DIRTY_TRACKED_LIST_FILE}"
+    tar -C "${REPO_ROOT}" -cf "${DIRTY_TRACKED_TAR}" -T "${DIRTY_TRACKED_LIST_FILE}"
+  fi
+
+  if [ -n "${UNTRACKED_PATHS}" ]; then
+    UNTRACKED_LIST_FILE="${BACKUP_DIR}/untracked-files.txt"
+    UNTRACKED_TAR="${BACKUP_DIR}/untracked-files.tar"
+    printf '%s\n' "${UNTRACKED_PATHS}" > "${UNTRACKED_LIST_FILE}"
+    tar -C "${REPO_ROOT}" -cf "${UNTRACKED_TAR}" -T "${UNTRACKED_LIST_FILE}"
+  fi
 }
 
-restore_local_compose() {
+restore_local_files() {
   if [ -f "${BACKUP_DIR}/docker-compose.yml" ]; then
     cp -a "${BACKUP_DIR}/docker-compose.yml" "${LOCAL_COMPOSE_FILE}"
+  fi
+
+  if [ -f "${BACKUP_DIR}/docker-compose.override.yml" ]; then
+    cp -a "${BACKUP_DIR}/docker-compose.override.yml" "${OVERRIDE_FILE}"
+  fi
+
+  if [ -f "${DIRTY_TRACKED_TAR}" ]; then
+    tar -C "${REPO_ROOT}" -xf "${DIRTY_TRACKED_TAR}"
+  fi
+  PRESERVED_FILES_RESTORED=1
+}
+
+clean_worktree_for_merge() {
+  if [ -n "${DIRTY_TRACKED_PATHS}" ]; then
+    print_info "Temporarily resetting tracked local changes before merge..."
+    git restore --worktree --staged .
+    WORKTREE_CLEANED_FOR_MERGE=1
+  fi
+}
+
+overlay_preserved_files_into_release_dir() {
+  if [ -f "${DIRTY_TRACKED_TAR}" ]; then
+    tar -C "${RELEASE_DIR}" -xf "${DIRTY_TRACKED_TAR}"
+  fi
+  if [ -f "${UNTRACKED_TAR}" ]; then
+    tar -C "${RELEASE_DIR}" -xf "${UNTRACKED_TAR}"
   fi
 }
 
@@ -143,9 +211,9 @@ update_repo() {
   fi
 
   print_info "Fast-forwarding repository to ${TARGET_SHORT_SHA}..."
-  git restore --worktree --staged -- deploy/docker-compose.yml 2>/dev/null || true
+  clean_worktree_for_merge
   git merge --ff-only "${TARGET_FULL_SHA}"
-  restore_local_compose
+  restore_local_files
   print_success "Repository updated to ${TARGET_SHORT_SHA}"
 }
 
@@ -161,6 +229,7 @@ build_release_image() {
   RELEASE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/openapi-release-${TARGET_SHORT_SHA}-XXXXXX")"
   print_info "Preparing clean build context at ${RELEASE_DIR}"
   git archive --format=tar "${TARGET_FULL_SHA}" | tar -xf - -C "${RELEASE_DIR}"
+  overlay_preserved_files_into_release_dir
 
   print_info "Building image ${image_ref}..."
   docker build \

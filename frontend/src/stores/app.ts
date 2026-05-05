@@ -41,6 +41,8 @@ export const useAppStore = defineStore('app', () => {
   const hasUpdate = ref<boolean>(false)
   const buildType = ref<string>('source')
   const releaseInfo = ref<ReleaseInfo | null>(null)
+  const canAutoUpdate = ref<boolean>(false)
+  const updateHint = ref<string>('')
 
   // Auto-incrementing ID for toasts
   let toastIdCounter = 0
@@ -247,7 +249,9 @@ export const useAppStore = defineStore('app', () => {
         has_update: hasUpdate.value,
         build_type: buildType.value,
         release_info: releaseInfo.value || undefined,
-        cached: true
+        cached: true,
+        can_auto_update: canAutoUpdate.value,
+        update_hint: updateHint.value || undefined
       }
     }
 
@@ -264,6 +268,8 @@ export const useAppStore = defineStore('app', () => {
       hasUpdate.value = data.has_update
       buildType.value = data.build_type || 'source'
       releaseInfo.value = data.release_info || null
+      canAutoUpdate.value = data.can_auto_update
+      updateHint.value = data.update_hint || ''
       versionLoaded.value = true
       return data
     } catch (error) {
@@ -352,6 +358,10 @@ export const useAppStore = defineStore('app', () => {
         balance_low_notify_enabled: false,
         account_quota_notify_enabled: false,
         balance_low_notify_threshold: 0,
+        channel_monitor_enabled: true,
+        channel_monitor_default_interval_seconds: 60,
+        available_channels_enabled: false,
+        affiliate_enabled: false,
       }
     }
 
@@ -421,6 +431,8 @@ export const useAppStore = defineStore('app', () => {
     hasUpdate,
     buildType,
     releaseInfo,
+    canAutoUpdate,
+    updateHint,
 
     // Computed
     hasActiveToasts,

@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +35,7 @@ type AdminService interface {
 	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error)
 	GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]APIKey, int64, error)
 	GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error)
+	GetUserRPMStatus(ctx context.Context, userID int64) (*UserRPMStatus, error)
 	// GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
 	// codeType is optional - pass empty string to return all types.
 	// Also returns totalRecharged (sum of all positive balance top-ups).
@@ -50,10 +54,13 @@ type AdminService interface {
 	GetGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
 	ClearGroupRateMultipliers(ctx context.Context, groupID int64) error
 	BatchSetGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error
+	ClearGroupRPMOverrides(ctx context.Context, groupID int64) error
+	BatchSetGroupRPMOverrides(ctx context.Context, groupID int64, entries []GroupRPMOverrideInput) error
 	UpdateGroupSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error
 
 	// API Key management (admin)
 	AdminUpdateAPIKeyGroupID(ctx context.Context, keyID int64, groupID *int64) (*AdminUpdateAPIKeyGroupIDResult, error)
+	AdminResetAPIKeyRateLimitUsage(ctx context.Context, keyID int64) (*APIKey, error)
 
 	// ReplaceUserGroup 替换用户的专属分组：授予新分组权限、迁移 Key、移除旧分组权限
 	ReplaceUserGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (*ReplaceUserGroupResult, error)
@@ -114,6 +121,7 @@ type CreateUserInput struct {
 	Notes         string
 	Balance       float64
 	Concurrency   int
+	RPMLimit      int
 	AllowedGroups []int64
 }
 
@@ -124,6 +132,7 @@ type UpdateUserInput struct {
 	Notes         *string
 	Balance       *float64 // 使用指针区分"未提供"和"设置为0"
 	Concurrency   *int     // 使用指针区分"未提供"和"设置为0"
+	RPMLimit      *int     // 使用指针区分"未提供"和"设置为0"
 	Status        string
 	AllowedGroups *[]int64 // 使用指针区分"未提供"和"设置为空数组"
 	// GroupRates 用户专属分组倍率配置
@@ -199,6 +208,8 @@ type CreateGroupInput struct {
 	RequireOAuthOnly            bool
 	RequirePrivacySet           bool
 	MessagesDispatchModelConfig OpenAIMessagesDispatchModelConfig
+	// RPMLimit 分组 RPM 上限（0 = 不限制）
+	RPMLimit int
 	// 从指定分组复制账号（创建分组后在同一事务内绑定）
 	CopyAccountsFromGroupIDs []int64
 }
@@ -234,6 +245,8 @@ type UpdateGroupInput struct {
 	RequireOAuthOnly            *bool
 	RequirePrivacySet           *bool
 	MessagesDispatchModelConfig *OpenAIMessagesDispatchModelConfig
+	// RPMLimit 分组 RPM 上限（0 = 不限制），nil 表示未提供不改动。
+	RPMLimit *int
 	// 从指定分组复制账号（同步操作：先清空当前分组的账号绑定，再绑定源分组的账号）
 	CopyAccountsFromGroupIDs []int64
 }
@@ -281,6 +294,7 @@ type UpdateAccountInput struct {
 // BulkUpdateAccountsInput describes the payload for bulk updating accounts.
 type BulkUpdateAccountsInput struct {
 	AccountIDs     []int64
+	Filters        *BulkUpdateAccountFilters
 	Name           string
 	ProxyID        *int64
 	Concurrency    *int
@@ -295,6 +309,15 @@ type BulkUpdateAccountsInput struct {
 	// SkipMixedChannelCheck skips the mixed channel risk check when binding groups.
 	// This should only be set when the caller has explicitly confirmed the risk.
 	SkipMixedChannelCheck bool
+}
+
+type BulkUpdateAccountFilters struct {
+	Platform    string
+	Type        string
+	Status      string
+	Group       string
+	Search      string
+	PrivacyMode string
 }
 
 // BulkUpdateAccountResult captures the result for a single account update.
@@ -315,6 +338,22 @@ type AdminUpdateAPIKeyGroupIDResult struct {
 // ReplaceUserGroupResult 分组替换操作的结果
 type ReplaceUserGroupResult struct {
 	MigratedKeys int64 // 迁移的 Key 数量
+}
+
+// UserRPMStatus describes a user's current per-minute RPM usage.
+type UserRPMStatus struct {
+	UserRPMUsed  int                  `json:"user_rpm_used"`
+	UserRPMLimit int                  `json:"user_rpm_limit"`
+	PerGroup     []UserGroupRPMStatus `json:"per_group"`
+}
+
+// UserGroupRPMStatus describes current per-minute RPM usage for one user/group pair.
+type UserGroupRPMStatus struct {
+	GroupID   int64  `json:"group_id"`
+	GroupName string `json:"group_name"`
+	Used      int    `json:"used"`
+	Limit     int    `json:"limit"`
+	Source    string `json:"source"` // "group" | "override"
 }
 
 // BulkUpdateAccountsResult is the aggregated response for bulk updates.
@@ -463,6 +502,8 @@ const (
 	proxyQualityClientUserAgent       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
 )
 
+var ErrRPMStatusUnavailable = infraerrors.New(http.StatusNotImplemented, "RPM_STATUS_UNAVAILABLE", "RPM cache not available")
+
 // adminServiceImpl implements AdminService
 type adminServiceImpl struct {
 	userRepo             UserRepository
@@ -472,6 +513,7 @@ type adminServiceImpl struct {
 	apiKeyRepo           APIKeyRepository
 	redeemCodeRepo       RedeemCodeRepository
 	userGroupRateRepo    UserGroupRateRepository
+	userRPMCache         UserRPMCache
 	billingCacheService  *BillingCacheService
 	proxyProber          ProxyExitInfoProber
 	proxyLatencyCache    ProxyLatencyCache
@@ -496,6 +538,7 @@ func NewAdminService(
 	apiKeyRepo APIKeyRepository,
 	redeemCodeRepo RedeemCodeRepository,
 	userGroupRateRepo UserGroupRateRepository,
+	userRPMCache UserRPMCache,
 	billingCacheService *BillingCacheService,
 	proxyProber ProxyExitInfoProber,
 	proxyLatencyCache ProxyLatencyCache,
@@ -514,6 +557,7 @@ func NewAdminService(
 		apiKeyRepo:           apiKeyRepo,
 		redeemCodeRepo:       redeemCodeRepo,
 		userGroupRateRepo:    userGroupRateRepo,
+		userRPMCache:         userRPMCache,
 		billingCacheService:  billingCacheService,
 		proxyProber:          proxyProber,
 		proxyLatencyCache:    proxyLatencyCache,
@@ -617,6 +661,7 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 		Role:          RoleUser, // Always create as regular user, never admin
 		Balance:       input.Balance,
 		Concurrency:   input.Concurrency,
+		RPMLimit:      input.RPMLimit,
 		Status:        StatusActive,
 		AllowedGroups: input.AllowedGroups,
 	}
@@ -670,6 +715,7 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	oldConcurrency := user.Concurrency
 	oldStatus := user.Status
 	oldRole := user.Role
+	oldRPMLimit := user.RPMLimit
 
 	if input.Email != "" {
 		user.Email = input.Email
@@ -695,6 +741,10 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		user.Concurrency = *input.Concurrency
 	}
 
+	if input.RPMLimit != nil {
+		user.RPMLimit = *input.RPMLimit
+	}
+
 	if input.AllowedGroups != nil {
 		user.AllowedGroups = *input.AllowedGroups
 	}
@@ -711,7 +761,9 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	}
 
 	if s.authCacheInvalidator != nil {
-		if user.Concurrency != oldConcurrency || user.Status != oldStatus || user.Role != oldRole {
+		// RPMLimit 直接参与 billing_cache_service.checkRPM 的三级级联，
+		// 不失效缓存会让修改在一个 L2 TTL 内失去效果。
+		if user.Concurrency != oldConcurrency || user.Status != oldStatus || user.Role != oldRole || user.RPMLimit != oldRPMLimit {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, user.ID)
 		}
 	}
@@ -833,6 +885,81 @@ func (s *adminServiceImpl) GetUserAPIKeys(ctx context.Context, userID int64, pag
 	return keys, result.Total, nil
 }
 
+func (s *adminServiceImpl) GetUserRPMStatus(ctx context.Context, userID int64) (*UserRPMStatus, error) {
+	if s.userRPMCache == nil {
+		return nil, ErrRPMStatusUnavailable
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	userRPMUsed, err := s.userRPMCache.GetUserRPM(ctx, userID)
+	if err != nil {
+		logger.LegacyPrintf("service.admin", "failed to get user rpm: user_id=%d err=%v", userID, err)
+	}
+
+	keys, _, err := s.GetUserAPIKeys(ctx, userID, 1, 1000, "", "")
+	if err != nil {
+		return nil, err
+	}
+
+	groupIDSet := make(map[int64]struct{})
+	for _, key := range keys {
+		if key.GroupID != nil && *key.GroupID > 0 {
+			groupIDSet[*key.GroupID] = struct{}{}
+		}
+	}
+
+	groupIDs := make([]int64, 0, len(groupIDSet))
+	for groupID := range groupIDSet {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+
+	var perGroup []UserGroupRPMStatus
+	for _, groupID := range groupIDs {
+		used, getErr := s.userRPMCache.GetUserGroupRPM(ctx, userID, groupID)
+		if getErr != nil {
+			logger.LegacyPrintf("service.admin", "failed to get user group rpm: user_id=%d group_id=%d err=%v", userID, groupID, getErr)
+		}
+
+		entry := UserGroupRPMStatus{
+			GroupID: groupID,
+			Used:    used,
+		}
+
+		if s.groupRepo != nil {
+			if group, groupErr := s.groupRepo.GetByIDLite(ctx, groupID); groupErr == nil && group != nil {
+				entry.GroupName = group.Name
+				entry.Limit = group.RPMLimit
+				entry.Source = "group"
+			} else if groupErr != nil {
+				logger.LegacyPrintf("service.admin", "failed to get group rpm status metadata: group_id=%d err=%v", groupID, groupErr)
+			}
+		}
+
+		if s.userGroupRateRepo != nil {
+			override, overrideErr := s.userGroupRateRepo.GetRPMOverrideByUserAndGroup(ctx, userID, groupID)
+			if overrideErr != nil {
+				logger.LegacyPrintf("service.admin", "failed to get rpm override: user_id=%d group_id=%d err=%v", userID, groupID, overrideErr)
+			} else if override != nil {
+				entry.Limit = *override
+				entry.Source = "override"
+			}
+		}
+
+		perGroup = append(perGroup, entry)
+	}
+
+	return &UserRPMStatus{
+		UserRPMUsed:  userRPMUsed,
+		UserRPMLimit: user.RPMLimit,
+		PerGroup:     perGroup,
+	}, nil
+}
+
 func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error) {
 	// Return mock data for now
 	return map[string]any{
@@ -847,16 +974,213 @@ func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, 
 // GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
 func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
+	if codeType == RedeemTypeAffiliateBalance {
+		codes, total, err := s.listAffiliateBalanceHistory(ctx, userID, params)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		return codes, total, totalRecharged, nil
+	}
+
+	if codeType == "" {
+		return s.getAllUserBalanceHistory(ctx, userID, params)
+	}
+
 	codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, codeType)
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	total := result.Total
 	// Aggregate total recharged amount (only once, regardless of type filter)
 	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	return codes, result.Total, totalRecharged, nil
+	return codes, total, totalRecharged, nil
+}
+
+func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, float64, error) {
+	needed := params.Offset() + params.Limit()
+	if needed < params.Limit() {
+		needed = params.Limit()
+	}
+
+	redeemCodes, redeemTotal, err := s.listRedeemBalanceHistoryForMerge(ctx, userID, needed)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	affiliateCodes, affiliateTotal, err := s.listAffiliateBalanceHistoryForMerge(ctx, userID, needed)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	codes := mergeBalanceHistoryCodes(redeemCodes, affiliateCodes, params)
+
+	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return codes, redeemTotal + affiliateTotal, totalRecharged, nil
+}
+
+func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
+	if needed <= 0 {
+		return nil, 0, nil
+	}
+
+	var (
+		out   []RedeemCode
+		total int64
+	)
+	for page := 1; len(out) < needed; page++ {
+		params := pagination.PaginationParams{Page: page, PageSize: 1000}
+		codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, "")
+		if err != nil {
+			return nil, 0, err
+		}
+		if result != nil {
+			total = result.Total
+		}
+		out = append(out, codes...)
+		if len(codes) < params.Limit() || int64(len(out)) >= total {
+			break
+		}
+	}
+	if len(out) > needed {
+		out = out[:needed]
+	}
+	return out, total, nil
+}
+
+func (s *adminServiceImpl) listAffiliateBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
+	if needed <= 0 {
+		return nil, 0, nil
+	}
+
+	var (
+		out   []RedeemCode
+		total int64
+	)
+	for page := 1; len(out) < needed; page++ {
+		params := pagination.PaginationParams{Page: page, PageSize: 1000}
+		codes, currentTotal, err := s.listAffiliateBalanceHistory(ctx, userID, params)
+		if err != nil {
+			return nil, 0, err
+		}
+		total = currentTotal
+		out = append(out, codes...)
+		if len(codes) < params.Limit() || int64(len(out)) >= total {
+			break
+		}
+	}
+	if len(out) > needed {
+		out = out[:needed]
+	}
+	return out, total, nil
+}
+
+func (s *adminServiceImpl) listAffiliateBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, error) {
+	if s == nil || s.entClient == nil || userID <= 0 {
+		return nil, 0, nil
+	}
+
+	rows, err := s.entClient.QueryContext(ctx, `
+SELECT id,
+       amount::double precision,
+       created_at
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND action = 'transfer'
+ORDER BY created_at DESC, id DESC
+OFFSET $2
+LIMIT $3`, userID, params.Offset(), params.Limit())
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	codes := make([]RedeemCode, 0, params.Limit())
+	for rows.Next() {
+		var id int64
+		var amount float64
+		var createdAt time.Time
+		if err := rows.Scan(&id, &amount, &createdAt); err != nil {
+			return nil, 0, err
+		}
+		usedBy := userID
+		usedAt := createdAt
+		codes = append(codes, RedeemCode{
+			ID:        -id,
+			Code:      fmt.Sprintf("AFF-%d", id),
+			Type:      RedeemTypeAffiliateBalance,
+			Value:     amount,
+			Status:    StatusUsed,
+			UsedBy:    &usedBy,
+			UsedAt:    &usedAt,
+			CreatedAt: createdAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	total, err := countAffiliateBalanceHistory(ctx, s.entClient, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return codes, total, nil
+}
+
+func countAffiliateBalanceHistory(ctx context.Context, client *dbent.Client, userID int64) (int64, error) {
+	rows, err := client.QueryContext(ctx, `
+SELECT COUNT(*)
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND action = 'transfer'`, userID)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var total sql.NullInt64
+	if rows.Next() {
+		if err := rows.Scan(&total); err != nil {
+			return 0, err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if !total.Valid {
+		return 0, nil
+	}
+	return total.Int64, nil
+}
+
+func mergeBalanceHistoryCodes(redeemCodes, affiliateCodes []RedeemCode, params pagination.PaginationParams) []RedeemCode {
+	combined := append(append([]RedeemCode{}, redeemCodes...), affiliateCodes...)
+	sort.SliceStable(combined, func(i, j int) bool {
+		return redeemCodeHistoryTime(combined[i]).After(redeemCodeHistoryTime(combined[j]))
+	})
+	offset := params.Offset()
+	if offset >= len(combined) {
+		return []RedeemCode{}
+	}
+	end := offset + params.Limit()
+	if end > len(combined) {
+		end = len(combined)
+	}
+	return combined[offset:end]
+}
+
+func redeemCodeHistoryTime(code RedeemCode) time.Time {
+	if code.UsedAt != nil {
+		return *code.UsedAt
+	}
+	return code.CreatedAt
 }
 
 func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int64, input AdminBindAuthIdentityInput) (*AdminBoundAuthIdentity, error) {
@@ -879,6 +1203,8 @@ func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int6
 	if providerKey == "" || providerSubject == "" {
 		return nil, infraerrors.BadRequest("INVALID_INPUT", "provider_type, provider_key, and provider_subject are required")
 	}
+	canonicalProviderKey := canonicalAdminAuthIdentityProviderKey(providerType, "", providerKey)
+	compatibleProviderKeys := compatibleAdminAuthIdentityProviderKeys(providerType, providerKey)
 
 	var issuer *string
 	if input.Issuer != nil {
@@ -900,25 +1226,26 @@ func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int6
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	identity, err := tx.AuthIdentity.Query().
+	identityRecords, err := tx.AuthIdentity.Query().
 		Where(
 			authidentity.ProviderTypeEQ(providerType),
-			authidentity.ProviderKeyEQ(providerKey),
+			authidentity.ProviderKeyIn(compatibleProviderKeys...),
 			authidentity.ProviderSubjectEQ(providerSubject),
 		).
-		Only(ctx)
-	if err != nil && !dbent.IsNotFound(err) {
+		All(ctx)
+	if err != nil {
 		return nil, infraerrors.InternalServer("ADMIN_AUTH_IDENTITY_BIND_LOOKUP_FAILED", "failed to inspect auth identity ownership").WithCause(err)
 	}
-	if identity != nil && identity.UserID != userID {
+	if hasAdminAuthIdentityOwnershipConflict(identityRecords, userID) {
 		return nil, infraerrors.Conflict("AUTH_IDENTITY_OWNERSHIP_CONFLICT", "auth identity already belongs to another user")
 	}
+	identity := selectOwnedAdminAuthIdentity(identityRecords, userID)
 
 	if identity == nil {
 		create := tx.AuthIdentity.Create().
 			SetUserID(userID).
 			SetProviderType(providerType).
-			SetProviderKey(providerKey).
+			SetProviderKey(canonicalProviderKey).
 			SetProviderSubject(providerSubject).
 			SetVerifiedAt(verifiedAt)
 		if issuer != nil {
@@ -932,7 +1259,9 @@ func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int6
 			return nil, infraerrors.InternalServer("ADMIN_AUTH_IDENTITY_BIND_SAVE_FAILED", "failed to save auth identity").WithCause(err)
 		}
 	} else {
-		update := tx.AuthIdentity.UpdateOneID(identity.ID).SetVerifiedAt(verifiedAt)
+		update := tx.AuthIdentity.UpdateOneID(identity.ID).
+			SetVerifiedAt(verifiedAt).
+			SetProviderKey(canonicalProviderKey)
 		if issuer != nil {
 			update = update.SetIssuer(*issuer)
 		}
@@ -947,27 +1276,28 @@ func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int6
 
 	var channel *dbent.AuthIdentityChannel
 	if channelInput != nil {
-		channel, err = tx.AuthIdentityChannel.Query().
+		channelRecords, err := tx.AuthIdentityChannel.Query().
 			Where(
 				authidentitychannel.ProviderTypeEQ(providerType),
-				authidentitychannel.ProviderKeyEQ(providerKey),
+				authidentitychannel.ProviderKeyIn(compatibleProviderKeys...),
 				authidentitychannel.ChannelEQ(channelInput.Channel),
 				authidentitychannel.ChannelAppIDEQ(channelInput.ChannelAppID),
 				authidentitychannel.ChannelSubjectEQ(channelInput.ChannelSubject),
 			).
 			WithIdentity().
-			Only(ctx)
-		if err != nil && !dbent.IsNotFound(err) {
+			All(ctx)
+		if err != nil {
 			return nil, infraerrors.InternalServer("ADMIN_AUTH_IDENTITY_CHANNEL_LOOKUP_FAILED", "failed to inspect auth identity channel ownership").WithCause(err)
 		}
-		if channel != nil && channel.Edges.Identity != nil && channel.Edges.Identity.UserID != userID {
+		if hasAdminAuthIdentityChannelOwnershipConflict(channelRecords, userID) {
 			return nil, infraerrors.Conflict("AUTH_IDENTITY_CHANNEL_OWNERSHIP_CONFLICT", "auth identity channel already belongs to another user")
 		}
+		channel = selectOwnedAdminAuthIdentityChannel(channelRecords, userID)
 		if channel == nil {
 			create := tx.AuthIdentityChannel.Create().
 				SetIdentityID(identity.ID).
 				SetProviderType(providerType).
-				SetProviderKey(providerKey).
+				SetProviderKey(canonicalProviderKey).
 				SetChannel(channelInput.Channel).
 				SetChannelAppID(channelInput.ChannelAppID).
 				SetChannelSubject(channelInput.ChannelSubject)
@@ -979,7 +1309,9 @@ func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int6
 				return nil, infraerrors.InternalServer("ADMIN_AUTH_IDENTITY_CHANNEL_SAVE_FAILED", "failed to save auth identity channel").WithCause(err)
 			}
 		} else {
-			update := tx.AuthIdentityChannel.UpdateOneID(channel.ID).SetIdentityID(identity.ID)
+			update := tx.AuthIdentityChannel.UpdateOneID(channel.ID).
+				SetIdentityID(identity.ID).
+				SetProviderKey(canonicalProviderKey)
 			if channelInput.Metadata != nil {
 				update = update.SetMetadata(cloneAdminAuthIdentityMetadata(channelInput.Metadata))
 			}
@@ -994,6 +1326,105 @@ func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int6
 		return nil, infraerrors.InternalServer("ADMIN_AUTH_IDENTITY_BIND_COMMIT_FAILED", "failed to commit auth identity bind").WithCause(err)
 	}
 	return buildAdminBoundAuthIdentity(identity, channel), nil
+}
+
+func compatibleAdminAuthIdentityProviderKeys(providerType, providerKey string) []string {
+	providerType = strings.TrimSpace(strings.ToLower(providerType))
+	providerKey = strings.TrimSpace(providerKey)
+	if providerKey == "" {
+		return []string{providerKey}
+	}
+	if providerType != "wechat" {
+		return []string{providerKey}
+	}
+
+	keys := []string{providerKey}
+	if !strings.EqualFold(providerKey, "wechat-main") {
+		keys = append(keys, "wechat-main")
+	}
+	if !strings.EqualFold(providerKey, "wechat") {
+		keys = append(keys, "wechat")
+	}
+	return keys
+}
+
+func canonicalAdminAuthIdentityProviderKey(providerType, existingKey, requestedKey string) string {
+	providerType = strings.TrimSpace(strings.ToLower(providerType))
+	existingKey = strings.TrimSpace(existingKey)
+	requestedKey = strings.TrimSpace(requestedKey)
+	if providerType != "wechat" {
+		if requestedKey != "" {
+			return requestedKey
+		}
+		return existingKey
+	}
+	if strings.EqualFold(existingKey, "wechat") || strings.EqualFold(existingKey, "wechat-main") || strings.EqualFold(requestedKey, "wechat-main") {
+		return "wechat-main"
+	}
+	if requestedKey != "" {
+		return requestedKey
+	}
+	return existingKey
+}
+
+func adminAuthIdentityProviderKeyRank(providerType, providerKey string) int {
+	providerType = strings.TrimSpace(strings.ToLower(providerType))
+	providerKey = strings.TrimSpace(providerKey)
+	if providerType != "wechat" {
+		return 0
+	}
+	switch {
+	case strings.EqualFold(providerKey, "wechat-main"):
+		return 0
+	case strings.EqualFold(providerKey, "wechat"):
+		return 2
+	default:
+		return 1
+	}
+}
+
+func selectOwnedAdminAuthIdentity(records []*dbent.AuthIdentity, userID int64) *dbent.AuthIdentity {
+	var selected *dbent.AuthIdentity
+	for _, record := range records {
+		if record.UserID != userID {
+			continue
+		}
+		if selected == nil || adminAuthIdentityProviderKeyRank(record.ProviderType, record.ProviderKey) < adminAuthIdentityProviderKeyRank(selected.ProviderType, selected.ProviderKey) {
+			selected = record
+		}
+	}
+	return selected
+}
+
+func hasAdminAuthIdentityOwnershipConflict(records []*dbent.AuthIdentity, userID int64) bool {
+	for _, record := range records {
+		if record.UserID != userID {
+			return true
+		}
+	}
+	return false
+}
+
+func selectOwnedAdminAuthIdentityChannel(records []*dbent.AuthIdentityChannel, userID int64) *dbent.AuthIdentityChannel {
+	var selected *dbent.AuthIdentityChannel
+	for _, record := range records {
+		if record.Edges.Identity == nil || record.Edges.Identity.UserID != userID {
+			continue
+		}
+		if selected == nil || adminAuthIdentityProviderKeyRank(record.ProviderType, record.ProviderKey) < adminAuthIdentityProviderKeyRank(selected.ProviderType, selected.ProviderKey) {
+			selected = record
+		}
+	}
+	return selected
+}
+
+func hasAdminAuthIdentityChannelOwnershipConflict(records []*dbent.AuthIdentityChannel, userID int64) bool {
+	for _, record := range records {
+		if record.Edges.Identity != nil && record.Edges.Identity.UserID != userID {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeAdminBindChannelInput(input *AdminBindAuthIdentityChannelInput) *AdminBindAuthIdentityChannelInput {
@@ -1207,6 +1638,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		RequirePrivacySet:               input.RequirePrivacySet,
 		DefaultMappedModel:              input.DefaultMappedModel,
 		MessagesDispatchModelConfig:     normalizeOpenAIMessagesDispatchModelConfig(input.MessagesDispatchModelConfig),
+		RPMLimit:                        input.RPMLimit,
 	}
 	sanitizeGroupMessagesDispatchFields(group)
 	if err := s.groupRepo.Create(ctx, group); err != nil {
@@ -1441,10 +1873,17 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.MessagesDispatchModelConfig != nil {
 		group.MessagesDispatchModelConfig = normalizeOpenAIMessagesDispatchModelConfig(*input.MessagesDispatchModelConfig)
 	}
+	if input.RPMLimit != nil {
+		group.RPMLimit = *input.RPMLimit
+	}
 	sanitizeGroupMessagesDispatchFields(group)
 
 	if err := s.groupRepo.Update(ctx, group); err != nil {
 		return nil, err
+	}
+
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
 	}
 
 	// 如果指定了复制账号的源分组，同步绑定（替换当前分组的账号）
@@ -1515,9 +1954,6 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		}
 	}
 
-	if s.authCacheInvalidator != nil {
-		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
-	}
 	return group, nil
 }
 
@@ -1591,6 +2027,39 @@ func (s *adminServiceImpl) BatchSetGroupRateMultipliers(ctx context.Context, gro
 		}
 	}
 	return s.userGroupRateRepo.SyncGroupRateMultipliers(ctx, groupID, entries)
+}
+
+func (s *adminServiceImpl) ClearGroupRPMOverrides(ctx context.Context, groupID int64) error {
+	if s.userGroupRateRepo == nil {
+		return nil
+	}
+	if err := s.userGroupRateRepo.ClearGroupRPMOverrides(ctx, groupID); err != nil {
+		return err
+	}
+	// RPM override 已嵌入 auth cache snapshot (v7)，变更后必须失效相关缓存。
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
+	}
+	return nil
+}
+
+func (s *adminServiceImpl) BatchSetGroupRPMOverrides(ctx context.Context, groupID int64, entries []GroupRPMOverrideInput) error {
+	if s.userGroupRateRepo == nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.RPMOverride != nil && *e.RPMOverride < 0 {
+			return infraerrors.BadRequest("INVALID_RPM_OVERRIDE", fmt.Sprintf("rpm_override must be >= 0 (user_id=%d)", e.UserID))
+		}
+	}
+	if err := s.userGroupRateRepo.SyncGroupRPMOverrides(ctx, groupID, entries); err != nil {
+		return err
+	}
+	// RPM override 已嵌入 auth cache snapshot (v7)，变更后必须失效相关缓存。
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
+	}
+	return nil
 }
 
 func (s *adminServiceImpl) UpdateGroupSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error {
@@ -1700,6 +2169,30 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 
 	result.APIKey = apiKey
 	return result, nil
+}
+
+// AdminResetAPIKeyRateLimitUsage resets all API key rate-limit usage windows.
+func (s *adminServiceImpl) AdminResetAPIKeyRateLimitUsage(ctx context.Context, keyID int64) (*APIKey, error) {
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
+	if err != nil {
+		return nil, err
+	}
+	apiKey.Usage5h = 0
+	apiKey.Usage1d = 0
+	apiKey.Usage7d = 0
+	apiKey.Window5hStart = nil
+	apiKey.Window1dStart = nil
+	apiKey.Window7dStart = nil
+	if err := s.apiKeyRepo.Update(ctx, apiKey); err != nil {
+		return nil, fmt.Errorf("reset api key rate limit usage: %w", err)
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+	}
+	if s.billingCacheService != nil {
+		_ = s.billingCacheService.InvalidateAPIKeyRateLimit(ctx, apiKey.ID)
+	}
+	return apiKey, nil
 }
 
 // ReplaceUserGroup 替换用户的专属分组
@@ -2027,6 +2520,14 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
+	if len(input.AccountIDs) == 0 && input.Filters != nil {
+		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)
+		if err != nil {
+			return nil, err
+		}
+		input.AccountIDs = accountIDs
+	}
+
 	result := &BulkUpdateAccountsResult{
 		SuccessIDs: make([]int64, 0, len(input.AccountIDs)),
 		FailedIDs:  make([]int64, 0, len(input.AccountIDs)),
@@ -2140,6 +2641,55 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	return result, nil
+}
+
+func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filters *BulkUpdateAccountFilters) ([]int64, error) {
+	if filters == nil {
+		return nil, nil
+	}
+
+	groupID := int64(0)
+	switch strings.TrimSpace(filters.Group) {
+	case "":
+	case "ungrouped":
+		groupID = AccountListGroupUngrouped
+	default:
+		parsedGroupID, err := strconv.ParseInt(strings.TrimSpace(filters.Group), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid group filter: %w", err)
+		}
+		groupID = parsedGroupID
+	}
+
+	const pageSize = 500
+	page := 1
+	accountIDs := make([]int64, 0, pageSize)
+
+	for {
+		accounts, total, err := s.ListAccounts(
+			ctx,
+			page,
+			pageSize,
+			filters.Platform,
+			filters.Type,
+			filters.Status,
+			filters.Search,
+			groupID,
+			filters.PrivacyMode,
+			"",
+			"",
+		)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range accounts {
+			accountIDs = append(accountIDs, account.ID)
+		}
+		if int64(len(accountIDs)) >= total || len(accounts) == 0 {
+			return accountIDs, nil
+		}
+		page++
+	}
 }
 
 func (s *adminServiceImpl) DeleteAccount(ctx context.Context, id int64) error {
