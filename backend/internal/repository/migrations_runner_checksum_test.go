@@ -70,6 +70,15 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		require.True(t, ok)
 	})
 
+	t.Run("109线上历史checksum可兼容", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"109_auth_identity_compat_backfill.sql",
+			"748ddcdc60f93a1ac562ce8a66ee870f64ee594bf6dbedad55ed8baf3c75b28c",
+			"0580b4602d85435edf9aca1633db580bb3932f26517f75134106f80275ec2ace",
+		)
+		require.True(t, ok)
+	})
+
 	t.Run("109回滚到历史文件后仍兼容已应用的新checksum", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"109_auth_identity_compat_backfill.sql",
