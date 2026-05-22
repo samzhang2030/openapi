@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Agent 安装教程 - Bridgemind</title>
+<meta name="description" content="Hermes Agent AI 代理安装教程，具备学习能力的 AI 代理，支持 Windows、macOS 和 Linux 平台。">
+<link rel="canonical" href="https://bridgemind.pro/docs/hermes.html">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="theme-color" content="#0b1020">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Bridgemind">
+<meta property="og:title" content="Hermes Agent 安装教程 - Bridgemind">
+<meta property="og:description" content="Hermes Agent AI 代理安装教程，具备学习能力的 AI 代理，支持 Windows、macOS 和 Linux 平台。">
+<meta property="og:url" content="https://bridgemind.pro/docs/hermes.html">
+<meta property="og:image" content="https://bridgemind.pro/logo.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Hermes Agent 安装教程 - Bridgemind">
+<meta name="twitter:description" content="Hermes Agent AI 代理安装教程，支持 Windows、macOS 和 Linux 平台。">
+<meta name="twitter:image" content="https://bridgemind.pro/logo.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "headline": "Hermes Agent 安装教程",
+      "description": "Hermes Agent AI 代理安装教程，具备学习能力的 AI 代理，支持 Windows、macOS 和 Linux 平台。",
+      "url": "https://bridgemind.pro/docs/hermes.html",
+      "mainEntityOfPage": "https://bridgemind.pro/docs/hermes.html",
+      "inLanguage": "zh-CN",
+      "datePublished": "2026-04-21",
+      "dateModified": "2026-04-21",
+      "author": {
+        "@type": "Organization",
+        "name": "Bridgemind"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Bridgemind",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://bridgemind.pro/logo.png"
+        }
+      },
+      "isPartOf": {
+        "@type": "CollectionPage",
+        "name": "Bridgemind 接入文档",
+        "url": "https://bridgemind.pro/docs/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "接入文档",
+          "item": "https://bridgemind.pro/docs/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Hermes Agent 安装教程",
+          "item": "https://bridgemind.pro/docs/hermes.html"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<link rel="stylesheet" href="../styles/common.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<!-- NAV -->
+<div id="nav-placeholder"></div>
+
+<!-- PAGE HEADER -->
+<header class="page-header">
+  <div class="container">
+    <h1>Hermes Agent</h1>
+    <p>具备学习能力的 AI 代理，能够从执行经验中沉淀技能、自主优化能力</p>
+    <div class="doc-badge hermes">⚡ Nous Research</div>
+  </div>
+</header>
+
+<!-- DOCS CONTENT -->
+<section class="docs-section">
+  <div class="container">
+    <div class="docs-layout">
+      
+      <!-- Sidebar -->
+      <aside class="docs-sidebar">
+        <div class="docs-nav">
+          <div class="docs-nav-title">AI 编程工具</div>
+          <nav class="docs-nav-list">
+            <a href="index.html" class="docs-nav-item">
+              <span class="docs-nav-icon">📚</span>
+              <span>文档首页</span>
+            </a>
+            <a href="claude-code.html" class="docs-nav-item">
+              <span class="docs-nav-icon">🤖</span>
+              <span>Claude Code</span>
+            </a>
+            <a href="codex.html" class="docs-nav-item">
+              <span class="docs-nav-icon">🔷</span>
+              <span>Codex CLI & App</span>
+            </a>
+            <a href="gemini.html" class="docs-nav-item">
+              <span class="docs-nav-icon">✨</span>
+              <span>Gemini CLI</span>
+            </a>
+            <a href="opencode.html" class="docs-nav-item">
+              <span class="docs-nav-icon">💻</span>
+              <span>Opencode</span>
+            </a>
+            <a href="openclaw.html" class="docs-nav-item">
+              <span class="docs-nav-icon">🦀</span>
+              <span>OpenClaw</span>
+            </a>
+            <a href="hermes.html" class="docs-nav-item active">
+              <span class="docs-nav-icon">⚡</span>
+              <span>Hermes Agent</span>
+            </a>
+          </nav>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="docs-main">
+        
+        <div class="doc-section">
+          <h2>📖 简介</h2>
+          <p>Hermes Agent 是由 Nous Research 开发的开源 AI 代理。它是一个业内少见的原生内置学习闭环的 AI Agent，可从执行经验中沉淀技能、自主优化能力、持久化知识、检索历史对话，并在跨会话中持续完善用户认知模型。</p>
+          <p>Hermes 支持多种 LLM 提供商，并提供了丰富的工具集成能力。</p>
+        </div>
+
+        <div class="doc-section">
+          <h2>⚙️ 系统要求</h2>
+          <table class="req-table">
+            <thead>
+              <tr>
+                <th>组件</th>
+                <th>要求</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Python</td>
+                <td>Python 3.10+</td>
+                <td>推荐使用 conda 或 venv</td>
+              </tr>
+              <tr>
+                <td>API Key</td>
+                <td>支持多种 LLM 提供商</td>
+                <td>OpenAI / Anthropic / Google 等</td>
+              </tr>
+              <tr>
+                <td>内存</td>
+                <td>建议 8GB+</td>
+                <td>取决于使用场景</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="doc-section">
+          <h2>🖥️ 选择您的平台</h2>
+          <div class="platform-tabs">
+            <button class="platform-tab active" data-platform="macos-hermes">macOS</button>
+            <button class="platform-tab" data-platform="windows-hermes">Windows</button>
+            <button class="platform-tab" data-platform="linux-hermes">Linux</button>
+          </div>
+
+          <!-- macOS -->
+          <div class="platform-content active" id="macos-hermes">
+            <h3>使用 pip 安装</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 创建虚拟环境（推荐）
+python -m venv hermes-env
+source hermes-env/bin/activate
+
+# 安装 Hermes Agent
+pip install hermes-agent
+
+# 或者从 GitHub 安装最新版
+pip install git+https://github.com/NousResearch/hermes-agent.git</code></div>
+
+            <h3>运行 Hermes</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 启动交互式对话
+hermes model
+
+# 配置工具
+hermes tools
+
+# 查看帮助
+hermes --help</code></div>
+
+            <h3>配置 LLM 提供商</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 使用环境变量配置
+export OPENAI_API_KEY="your-api-key"
+export OPENAI_BASE_URL="https://bridgemind.pro/v1"
+
+# 或配置 Anthropic
+export ANTHROPIC_API_KEY="your-api-key"
+export ANTHROPIC_BASE_URL="https://bridgemind.pro/v1"
+
+# 运行
+hermes model</code></div>
+          </div>
+
+          <!-- Windows -->
+          <div class="platform-content" id="windows-hermes">
+            <h3>使用 pip 安装</h3>
+            <div class="doc-code-label">PowerShell 或 CMD</div>
+            <div class="doc-code"><code># 创建虚拟环境
+python -m venv hermes-env
+.\hermes-env\Scripts\activate
+
+# 安装 Hermes Agent
+pip install hermes-agent</code></div>
+
+            <h3>使用 WSL 安装</h3>
+            <div class="doc-code-label">WSL 终端</div>
+            <div class="doc-code"><code># 创建虚拟环境
+python3 -m venv hermes-env
+source hermes-env/bin/activate
+
+# 安装
+pip install hermes-agent
+
+# 运行
+hermes model</code></div>
+
+            <h3>配置环境变量 (PowerShell)</h3>
+            <div class="doc-code-label">PowerShell</div>
+            <div class="doc-code"><code>$env:OPENAI_API_KEY="your-api-key"
+$env:OPENAI_BASE_URL="https://bridgemind.pro/v1"
+
+hermes model</code></div>
+
+            <h3>配置环境变量 (CMD)</h3>
+            <div class="doc-code-label">CMD</div>
+            <div class="doc-code"><code>set OPENAI_API_KEY=your-api-key
+set OPENAI_BASE_URL=https://bridgemind.pro/v1
+
+hermes model</code></div>
+          </div>
+
+          <!-- Linux -->
+          <div class="platform-content" id="linux-hermes">
+            <h3>使用 pip 安装</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 安装 Python 和 pip (如未安装)
+sudo apt update
+sudo apt install python3 python3-pip python3-venv
+
+# 创建虚拟环境
+python3 -m venv hermes-env
+source hermes-env/bin/activate
+
+# 安装 Hermes Agent
+pip install hermes-agent</code></div>
+
+            <h3>从源码安装</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 克隆仓库
+git clone https://github.com/NousResearch/hermes-agent.git
+cd hermes-agent
+
+# 创建虚拟环境并安装
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .</code></div>
+
+            <h3>配置并运行</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 配置环境变量
+export OPENAI_API_KEY="your-api-key"
+export OPENAI_BASE_URL="https://bridgemind.pro/v1"
+
+# 运行交互式 CLI
+hermes model
+
+# 配置工具
+hermes tools</code></div>
+
+            <div class="doc-info">
+              <div class="doc-info-title">💡 使用 Bridgemind</div>
+              <p>通过 Bridgemind API，您可以访问多种模型，包括 GPT、Claude 和 Gemini 系列。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="doc-section">
+          <h2>🚀 基本使用</h2>
+          
+          <h3>主要命令</h3>
+          <ul>
+            <li><code>hermes model</code> - 启动交互式 CLI，选择模型开始对话</li>
+            <li><code>hermes tools</code> - 配置可用的工具</li>
+            <li><code>hermes --help</code> - 查看帮助信息</li>
+          </ul>
+
+          <h3>核心特性</h3>
+          <ul>
+            <li><strong>学习闭环</strong> - 从执行经验中沉淀技能和知识</li>
+            <li><strong>多提供商支持</strong> - 支持多种 LLM 提供商</li>
+            <li><strong>工具集成</strong> - 丰富的工具扩展能力</li>
+            <li><strong>历史检索</strong> - 检索历史对话，跨会话持续优化</li>
+          </ul>
+
+          <h3>与 OpenClaw 配合使用</h3>
+          <p>Hermes Agent 可以与 OpenClaw 配合使用，构建更强大的 AI 自动化解决方案。OpenClaw 提供 Gateway 和多渠道接入能力，Hermes 提供智能代理和学习能力。</p>
+        </div>
+
+        <div class="doc-section">
+          <h2>🔗 相关链接</h2>
+          <ul>
+            <li><a href="https://hermes-agent.nousresearch.com/" target="_blank" style="color: var(--accent);">Hermes Agent 官网</a></li>
+            <li><a href="https://github.com/NousResearch/hermes-agent" target="_blank" style="color: var(--accent);">GitHub 仓库</a></li>
+            <li><a href="https://www.datacamp.com/tutorial/hermes-agent" target="_blank" style="color: var(--accent);">DataCamp 教程</a></li>
+          </ul>
+        </div>
+
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<div id="footer-placeholder"></div>
+
+<script src="../scripts/components.js"></script>
+<script src="../app.js"></script>
+<script>
+document.querySelectorAll('.platform-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.platform-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const platform = tab.dataset.platform;
+    document.querySelectorAll('.platform-content').forEach(content => {
+      content.classList.remove('active');
+    });
+    document.getElementById(platform).classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

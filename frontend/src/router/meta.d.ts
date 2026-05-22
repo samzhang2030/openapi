@@ -50,6 +50,18 @@ declare module 'vue-router' {
     requiresPayment?: boolean
 
     /**
+     * Whether this route requires password reset to be enabled publicly
+     * @default false
+     */
+    requiresPasswordResetEnabled?: boolean
+
+    /**
+     * Whether this route requires the email verification registration flow to be enabled
+     * @default false
+     */
+    requiresEmailVerifyEnabled?: boolean
+
+    /**
      * 是否要求风控中心功能开关已启用
      * @default false
      */

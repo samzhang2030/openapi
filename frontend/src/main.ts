@@ -27,11 +27,6 @@ async function bootstrap() {
   const appStore = useAppStore()
   appStore.initFromInjectedConfig()
 
-  // Set document title immediately after config is loaded
-  if (appStore.siteName && appStore.siteName !== 'BridgeMind') {
-    document.title = `${appStore.siteName} - AI API Gateway`
-  }
-
   await initI18n()
 
   app.use(router)

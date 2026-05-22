@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/util/httputil"
 	"github.com/imroc/req/v3"
 )
 
@@ -21,6 +23,15 @@ const (
 	PrivacyModeFailed      = "training_set_failed"
 	PrivacyModeCFBlocked   = "training_set_cf_blocked"
 )
+
+var openAIPrivacyCFChallengeMarkers = []string{
+	"window._cf_chl_opt",
+	"just a moment",
+	"enable javascript and cookies to continue",
+	"__cf_chl_",
+	"challenge-platform",
+	"cf-ray",
+}
 
 func shouldSkipOpenAIPrivacyEnsure(extra map[string]any) bool {
 	if extra == nil {
@@ -69,21 +80,43 @@ func disableOpenAITraining(ctx context.Context, clientFactory PrivacyClientFacto
 		return PrivacyModeFailed
 	}
 
-	if resp.StatusCode == 403 || resp.StatusCode == 503 {
+	if !resp.IsSuccessState() {
 		body := resp.String()
-		if strings.Contains(body, "cloudflare") || strings.Contains(body, "cf-") || strings.Contains(body, "Just a moment") {
-			slog.Warn("openai_privacy_cf_blocked", "status", resp.StatusCode)
+		if isOpenAIPrivacyCloudflareChallenge(resp.StatusCode, resp.Header, body) {
+			slog.Warn(
+				"openai_privacy_cf_blocked",
+				"status",
+				resp.StatusCode,
+				"cf_ray",
+				httputil.ExtractCloudflareRayID(resp.Header, []byte(body)),
+			)
 			return PrivacyModeCFBlocked
 		}
-	}
-
-	if !resp.IsSuccessState() {
-		slog.Warn("openai_privacy_failed", "status", resp.StatusCode, "body", truncate(resp.String(), 200))
+		slog.Warn("openai_privacy_failed", "status", resp.StatusCode, "body", truncate(body, 200))
 		return PrivacyModeFailed
 	}
 
 	slog.Info("openai_privacy_training_disabled")
 	return PrivacyModeTrainingOff
+}
+
+func isOpenAIPrivacyCloudflareChallenge(statusCode int, headers http.Header, body string) bool {
+	if httputil.IsCloudflareChallengeResponse(statusCode, headers, []byte(body)) {
+		return true
+	}
+	if statusCode != http.StatusServiceUnavailable {
+		return false
+	}
+	if headers != nil && strings.EqualFold(strings.TrimSpace(headers.Get("cf-mitigated")), "challenge") {
+		return true
+	}
+	preview := strings.ToLower(truncate(body, 4096))
+	for _, marker := range openAIPrivacyCFChallengeMarkers {
+		if strings.Contains(preview, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // ChatGPTAccountInfo 从 chatgpt.com/backend-api/accounts/check 获取的账号信息

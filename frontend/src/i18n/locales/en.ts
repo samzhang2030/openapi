@@ -7,12 +7,56 @@ export default {
     switchToLight: 'Switch to Light Mode',
     switchToDark: 'Switch to Dark Mode',
     dashboard: 'Dashboard',
-    login: 'Login',
-    getStarted: 'Get Started',
+    login: 'Sign In / Sign Up',
+    getStarted: 'Sign In and Create API Key',
     goToDashboard: 'Go to Dashboard',
+    pageTitle: 'Unified AI API Gateway',
+    quickLinksTitle: 'Popular setup guides',
+    quickLinksDescription:
+      'Open the right guide first, then create your API key to finish setup faster.',
+    quickLinksAll: 'Docs Home',
+    quickLinksAllDesc: 'Browse all supported tools and onboarding guides in one place.',
+    quickLinksClaudeDesc: 'Set up Claude Code with Bridgemind and start coding quickly.',
+    quickLinksCodexDesc: 'Configure Codex CLI and App with the correct endpoint and API key.',
+    quickLinksGeminiDesc: 'Connect Gemini CLI with Bridgemind for a smooth first-run setup.',
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',
-    heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',
+    heroDescription:
+      'Start with the right guide, create an API key after signing in, then point your client to Bridgemind to access Claude, GPT, Gemini, and more.',
+    heroNote:
+      'The docs are public, so you can review the setup first. You only need to sign in when you are ready to create your API key.',
+    heroSteps: {
+      docs: 'Start with docs',
+      login: 'Create API key after sign-in',
+      verify: 'Check the key usage page'
+    },
+    onboarding: {
+      eyebrow: 'First Run',
+      title: 'From signup to API key in three steps',
+      description:
+        'Pick the right guide, create your API key after signing in, and use the public tools to confirm everything is wired up correctly.',
+      quickAction: 'Check API Key Usage',
+      steps: {
+        docs: {
+          badge: 'No Login',
+          title: 'Start with the docs',
+          desc: 'Choose the right guide for Claude Code, Codex, Gemini CLI, and other supported tools before you configure anything.',
+          action: 'Open Docs'
+        },
+        login: {
+          badge: 'Console',
+          title: 'Sign in and create a key',
+          desc: 'Generate an API key in the dashboard, then manage quotas, access, and usage from one place.',
+          action: 'Go to Login'
+        },
+        usage: {
+          badge: 'Public Tool',
+          title: 'Verify after setup',
+          desc: 'Once your client is connected, use the public usage page to quickly confirm the key is active before checking deeper stats.',
+          action: 'View Usage'
+        }
+      }
+    },
     tags: {
       subscriptionToApi: 'Subscription to API',
       stickySession: 'Session Persistence',
@@ -101,9 +145,16 @@ export default {
     },
     // CTA section
     cta: {
-      title: 'Ready to Get Started?',
-      description: 'Sign up now and get free trial credits to experience seamless AI access',
-      button: 'Sign Up Free'
+      title: 'Get your API key in about three minutes',
+      description:
+        'Sign in to Bridgemind, create your API key, switch your client Base URL to Bridgemind, and you are ready to go.',
+      helper:
+        'Sign in or sign up, create your API key in the dashboard, then finish the client setup with the docs.',
+      button: 'Sign Up and Get API Key',
+      loggedInTitle: 'Continue creating or managing API keys',
+      loggedInDescription:
+        'Create, copy, or manage API keys in the dashboard, review usage, and then finish the client setup with the matching guide.',
+      loggedInHelper: 'Once the API key is ready, replace the Base URL and key in your client to start using Bridgemind.'
     },
     footer: {
       allRightsReserved: 'All rights reserved.'
