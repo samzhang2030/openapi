@@ -764,6 +764,22 @@ func (s *RateLimitService) handleOpenAI403(ctx context.Context, account *Account
 		"account may be suspended or lack permissions",
 	)
 
+	if isOpenAIAPIKeyQuotaExhaustedError(account, upstreamMsg, responseBody) {
+		until := time.Now().Add(time.Duration(openAI403CooldownMinutesDefault) * time.Minute)
+		reason := "OpenAI API key quota temporary cooldown: " + msg
+		if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+			slog.Warn("openai_apikey_quota_set_temp_unschedulable_failed", "account_id", account.ID, "error", err)
+			s.handleAuthError(ctx, account, msg)
+			return true
+		}
+		slog.Warn(
+			"openai_apikey_quota_temp_unschedulable",
+			"account_id", account.ID,
+			"until", until,
+		)
+		return true
+	}
+
 	if s.openAI403CounterCache == nil {
 		s.handleAuthError(ctx, account, msg)
 		return true
@@ -799,6 +815,28 @@ func (s *RateLimitService) handleOpenAI403(ctx context.Context, account *Account
 		"threshold", openAI403DisableThreshold,
 	)
 	return true
+}
+
+func isOpenAIAPIKeyQuotaExhaustedError(account *Account, upstreamMsg string, responseBody []byte) bool {
+	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
+		return false
+	}
+
+	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
+	errorType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "error.type").String()))
+	message := strings.ToLower(strings.TrimSpace(upstreamMsg + " " + string(responseBody)))
+
+	if code == "insufficient_quota" || errorType == "insufficient_quota" {
+		return true
+	}
+	if strings.Contains(message, "insufficient_quota") {
+		return true
+	}
+	if strings.Contains(message, "quota") && (strings.Contains(message, "insufficient") || strings.Contains(message, "exhausted")) {
+		return true
+	}
+	return (strings.Contains(message, "余额") || strings.Contains(message, "额度")) &&
+		(strings.Contains(message, "不足") || strings.Contains(message, "用完") || strings.Contains(message, "耗尽"))
 }
 
 // handleAntigravity403 处理 Antigravity 平台的 403 错误

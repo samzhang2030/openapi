@@ -1,0 +1,21 @@
+[Unit]
+Description=Sub2API (WSL Source Install)
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=steven
+Group=steven
+WorkingDirectory=/home/steven/sub2api/backend
+ExecStart=/home/steven/sub2api/backend/sub2api
+Restart=always
+RestartSec=5
+Environment=DATA_DIR=/home/steven/sub2api/backend
+Environment=GIN_MODE=release
+Environment=SERVER_HOST=0.0.0.0
+Environment=SERVER_PORT=8080
+EnvironmentFile=-/home/steven/sub2api/backend/sub2api.service.env
+
+[Install]
+WantedBy=multi-user.target

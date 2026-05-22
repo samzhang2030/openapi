@@ -1,4 +1,4 @@
-# Sub2API
+# BridgeMind
 
 <div align="center">
 
@@ -10,13 +10,13 @@
 
 <a href="https://trendshift.io/repositories/21823" target="_blank"><img src="https://trendshift.io/api/badge/repositories/21823" alt="Wei-Shaw%2Fsub2api | Trendshift" width="250" height="55"/></a>
 
-**サブスクリプションクォータ配分のための AI API ゲートウェイプラットフォーム**
+**BridgeMind | サブスクリプションクォータ配分のための AI API ゲートウェイプラットフォーム**
 
 [English](README.md) | [中文](README_CN.md) | 日本語
 
 </div>
 
-> **Sub2API が公式に使用しているドメインは `sub2api.org` と `pincc.ai` のみです。Sub2API の名称を使用している他のウェブサイトは、サードパーティによるデプロイやサービスであり、本プロジェクトとは一切関係がありません。ご利用の際はご自身で確認・判断をお願いします。**
+> **BridgeMind は Sub2API を基盤にしたデプロイブランドです。Sub2API の上流公式ドメインは引き続き `sub2api.org` と `pincc.ai` です。**
 
 ---
 
@@ -32,7 +32,7 @@ Sub2API をオンラインでお試しください: **[https://demo.sub2api.org/
 
 ## 概要
 
-Sub2API は、AI 製品のサブスクリプションから API クォータを配分・管理するために設計された AI API ゲートウェイプラットフォームです。ユーザーはプラットフォームが生成した API キーを通じて上流の AI サービスにアクセスでき、プラットフォームは認証、課金、負荷分散、リクエスト転送を処理します。
+BridgeMind（中国語名: `智桥云枢`）は、Sub2API を基盤として構築された AI API ゲートウェイプラットフォームのデプロイです。ユーザーはプラットフォームが生成した API キーを通じて上流の AI サービスにアクセスでき、プラットフォームは認証、課金、負荷分散、リクエスト転送を処理します。
 
 ## 機能
 

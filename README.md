@@ -1,4 +1,4 @@
-# Sub2API
+# BridgeMind
 
 <div align="center">
 
@@ -10,13 +10,13 @@
 
 <a href="https://trendshift.io/repositories/21823" target="_blank"><img src="https://trendshift.io/api/badge/repositories/21823" alt="Wei-Shaw%2Fsub2api | Trendshift" width="250" height="55"/></a>
 
-**AI API Gateway Platform for Subscription Quota Distribution**
+**BridgeMind | AI API Gateway Platform for Subscription Quota Distribution**
 
 English | [中文](README_CN.md) | [日本語](README_JA.md)
 
 </div>
 
-> **Sub2API officially uses only the domains `sub2api.org` and `pincc.ai`. Other websites using the Sub2API name may be third-party deployments or services and are not affiliated with this project. Please verify and exercise your own judgment.**
+> **BridgeMind is this deployment brand built on top of Sub2API. Upstream official domains for Sub2API remain `sub2api.org` and `pincc.ai`.**
 
 ---
 
@@ -32,7 +32,7 @@ Demo credentials (shared demo environment; **not** created automatically for sel
 
 ## Overview
 
-Sub2API is an AI API gateway platform designed to distribute and manage API quotas from AI product subscriptions. Users can access upstream AI services through platform-generated API Keys, while the platform handles authentication, billing, load balancing, and request forwarding.
+BridgeMind, branded in Chinese as `智桥云枢`, is an AI API gateway platform deployment built on Sub2API. Users can access upstream AI services through platform-generated API Keys, while the platform handles authentication, billing, load balancing, and request forwarding.
 
 ## Features
 
@@ -151,6 +151,32 @@ underscores_in_headers on;
 ```
 
 Nginx drops headers containing underscores by default (e.g. `session_id`), which breaks sticky session routing in multi-account setups.
+
+If you proxy streaming endpoints such as `/responses`, `/v1/*`, or `/openai/v1/*`, disable proxy buffering and compression for those locations so SSE first-token delivery is not delayed by Nginx:
+
+```nginx
+location ^~ /v1/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+    proxy_buffering off;
+    proxy_request_buffering off;
+    proxy_cache off;
+    proxy_max_temp_file_size 0;
+    gzip off;
+    chunked_transfer_encoding on;
+    tcp_nodelay on;
+}
+```
+
+Apply the same settings to `/responses` and `/openai/v1/` if you expose those routes directly.
 
 ---
 
