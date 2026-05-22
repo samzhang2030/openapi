@@ -625,6 +625,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		if resp.StatusCode == http.StatusTooManyRequests {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
+		s.reconcileOpenAIAPIKeyQuotaExhaustedState(ctx, account, body)
 		// 401 Unauthorized: 标记账号为永久错误
 		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
@@ -737,6 +738,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		if resp.StatusCode == http.StatusTooManyRequests {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
+		s.reconcileOpenAIAPIKeyQuotaExhaustedState(ctx, account, body)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -785,6 +787,44 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 		account.Status = StatusActive
 		account.ErrorMessage = ""
 	}
+}
+
+func (s *AccountTestService) reconcileOpenAIAPIKeyQuotaExhaustedState(ctx context.Context, account *Account, body []byte) bool {
+	if s == nil || s.accountRepo == nil || account == nil {
+		return false
+	}
+	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
+	if !isOpenAIAPIKeyQuotaExhaustedError(account, upstreamMsg, body) {
+		return false
+	}
+
+	if account.Status == StatusError {
+		if err := s.accountRepo.ClearError(ctx, account.ID); err != nil {
+			log.Printf("[WARN] Failed to clear OpenAI API key quota error for account %d: %v", account.ID, err)
+		} else {
+			account.Status = StatusActive
+			account.ErrorMessage = ""
+		}
+	}
+
+	message := sanitizeUpstreamErrorMessage(upstreamMsg)
+	if message == "" {
+		message = truncateForLog(body, 512)
+	} else {
+		message = truncateForLog([]byte(message), 512)
+	}
+	reason := "OpenAI API key quota temporary cooldown from account test"
+	if message != "" {
+		reason += ": " + message
+	}
+	until := time.Now().Add(time.Duration(openAI403CooldownMinutesDefault) * time.Minute)
+	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+		log.Printf("[WARN] Failed to set OpenAI API key quota cooldown for account %d: %v", account.ID, err)
+		return true
+	}
+	account.TempUnschedulableUntil = &until
+	account.TempUnschedulableReason = reason
+	return true
 }
 
 // testGeminiAccountConnection tests a Gemini account's connection
@@ -1379,6 +1419,7 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		s.reconcileOpenAIAPIKeyQuotaExhaustedState(ctx, account, body)
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 

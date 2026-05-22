@@ -508,6 +508,7 @@ const (
 	proxyQualityResponseHeaderTimeout = 10 * time.Second
 	proxyQualityMaxBodyBytes          = int64(8 * 1024)
 	proxyQualityClientUserAgent       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+	openAIAPIKeyDefaultGroupName      = "mixed-default"
 )
 
 var ErrRPMStatusUnavailable = infraerrors.New(http.StatusNotImplemented, "RPM_STATUS_UNAVAILABLE", "RPM cache not available")
@@ -2353,8 +2354,10 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	applyOpenAIAPIKeyCreateDefaults(input)
+
 	// 绑定分组
-	groupIDs := input.GroupIDs
+	groupIDs := append([]int64(nil), input.GroupIDs...)
 	// 如果没有指定分组,自动绑定对应平台的默认分组
 	if len(groupIDs) == 0 && !input.SkipDefaultGroupBind {
 		defaultGroupName := input.Platform + "-default"
@@ -2367,6 +2370,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 				}
 			}
 		}
+	}
+	if !input.SkipDefaultGroupBind && input.Platform == PlatformOpenAI && input.Type == AccountTypeAPIKey {
+		groupIDs = s.appendOpenAIAPIKeyDefaultGroup(ctx, groupIDs)
 	}
 
 	// 检查混合渠道风险（除非用户已确认）
@@ -2454,6 +2460,43 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	}
 
 	return account, nil
+}
+
+func applyOpenAIAPIKeyCreateDefaults(input *CreateAccountInput) {
+	if input == nil || input.Platform != PlatformOpenAI || input.Type != AccountTypeAPIKey {
+		return
+	}
+	if input.Extra == nil {
+		input.Extra = map[string]any{}
+	}
+
+	rawMode, _ := input.Extra["openai_apikey_responses_websockets_v2_mode"].(string)
+	mode := normalizeOpenAIWSIngressMode(rawMode)
+	if mode == "" || mode == OpenAIWSIngressModeOff {
+		mode = OpenAIWSIngressModeCtxPool
+	}
+	input.Extra["openai_apikey_responses_websockets_v2_mode"] = mode
+	input.Extra["openai_apikey_responses_websockets_v2_enabled"] = mode != OpenAIWSIngressModeOff
+}
+
+func (s *adminServiceImpl) appendOpenAIAPIKeyDefaultGroup(ctx context.Context, groupIDs []int64) []int64 {
+	if s == nil || s.groupRepo == nil {
+		return groupIDs
+	}
+	groups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return groupIDs
+	}
+	for _, group := range groups {
+		if group.ID <= 0 || group.Name != openAIAPIKeyDefaultGroupName {
+			continue
+		}
+		if containsInt64(groupIDs, group.ID) {
+			return groupIDs
+		}
+		return append(groupIDs, group.ID)
+	}
+	return groupIDs
 }
 
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {

@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
 
@@ -67,6 +68,9 @@ type openAIAccountTestRepo struct {
 	rateLimitedID      int64
 	rateLimitedAt      *time.Time
 	clearedErrorID     int64
+	tempUnschedID      int64
+	tempUnschedUntil   *time.Time
+	tempUnschedReason  string
 	setErrorID         int64
 	setErrorMsg        string
 }
@@ -90,6 +94,13 @@ func (r *openAIAccountTestRepo) SetRateLimited(_ context.Context, id int64, rese
 
 func (r *openAIAccountTestRepo) ClearError(_ context.Context, id int64) error {
 	r.clearedErrorID = id
+	return nil
+}
+
+func (r *openAIAccountTestRepo) SetTempUnschedulable(_ context.Context, id int64, until time.Time, reason string) error {
+	r.tempUnschedID = id
+	r.tempUnschedUntil = &until
+	r.tempUnschedReason = reason
 	return nil
 }
 
@@ -276,6 +287,40 @@ func TestAccountTestService_OpenAI429ActiveAccountDoesNotClearError(t *testing.T
 	require.Zero(t, repo.clearedErrorID)
 	require.Equal(t, StatusActive, account.Status)
 	require.NotNil(t, account.RateLimitResetAt)
+}
+
+func TestAccountTestService_OpenAIAPIKeyInsufficientQuotaSetsTempUnschedulable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := newTestContext()
+
+	resp := newJSONResponse(http.StatusForbidden, `{"error":{"message":"余额和订阅额度均不足，请充值后再使用","type":"permission_error","code":"insufficient_quota"}}`)
+
+	repo := &openAIAccountTestRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:           82,
+		Platform:     PlatformOpenAI,
+		Type:         AccountTypeAPIKey,
+		Status:       StatusError,
+		ErrorMessage: "stale quota error",
+		Concurrency:  1,
+		Credentials:  map[string]any{"api_key": "sk-test"},
+		Extra:        map[string]any{"responses_api_enabled": true},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
+	require.Error(t, err)
+	require.Equal(t, account.ID, repo.clearedErrorID)
+	require.Equal(t, account.ID, repo.tempUnschedID)
+	require.NotNil(t, repo.tempUnschedUntil)
+	require.Contains(t, repo.tempUnschedReason, "quota temporary cooldown")
+	require.Contains(t, repo.tempUnschedReason, "余额和订阅额度均不足")
+	require.Zero(t, repo.setErrorID)
+	require.Equal(t, StatusActive, account.Status)
+	require.Empty(t, account.ErrorMessage)
+	require.NotNil(t, account.TempUnschedulableUntil)
+	require.Contains(t, account.TempUnschedulableReason, "quota temporary cooldown")
 }
 
 func TestAccountTestService_OpenAI429WithoutResetSignalDoesNotMutateRuntimeState(t *testing.T) {
