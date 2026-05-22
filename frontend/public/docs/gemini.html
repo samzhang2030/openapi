@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gemini CLI 安装教程 - Bridgemind</title>
+<meta name="description" content="Google Gemini CLI 安装使用教程，支持 Windows、macOS 和 Linux 平台，多种安装方式。">
+<link rel="canonical" href="https://bridgemind.pro/docs/gemini.html">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="theme-color" content="#0b1020">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Bridgemind">
+<meta property="og:title" content="Gemini CLI 安装教程 - Bridgemind">
+<meta property="og:description" content="Google Gemini CLI 安装使用教程，支持 Windows、macOS 和 Linux 平台，多种安装方式。">
+<meta property="og:url" content="https://bridgemind.pro/docs/gemini.html">
+<meta property="og:image" content="https://bridgemind.pro/logo.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Gemini CLI 安装教程 - Bridgemind">
+<meta name="twitter:description" content="Google Gemini CLI 安装使用教程，支持 Windows、macOS 和 Linux 平台。">
+<meta name="twitter:image" content="https://bridgemind.pro/logo.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      "headline": "Gemini CLI 安装教程",
+      "description": "Google Gemini CLI 安装使用教程，支持 Windows、macOS 和 Linux 平台，多种安装方式。",
+      "url": "https://bridgemind.pro/docs/gemini.html",
+      "mainEntityOfPage": "https://bridgemind.pro/docs/gemini.html",
+      "inLanguage": "zh-CN",
+      "datePublished": "2026-04-21",
+      "dateModified": "2026-04-21",
+      "author": {
+        "@type": "Organization",
+        "name": "Bridgemind"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Bridgemind",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://bridgemind.pro/logo.png"
+        }
+      },
+      "isPartOf": {
+        "@type": "CollectionPage",
+        "name": "Bridgemind 接入文档",
+        "url": "https://bridgemind.pro/docs/"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "接入文档",
+          "item": "https://bridgemind.pro/docs/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Gemini CLI 安装教程",
+          "item": "https://bridgemind.pro/docs/gemini.html"
+        }
+      ]
+    }
+  ]
+}
+</script>
+<link rel="stylesheet" href="../styles/common.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<!-- NAV -->
+<div id="nav-placeholder"></div>
+
+<!-- PAGE HEADER -->
+<header class="page-header">
+  <div class="container">
+    <h1>Gemini CLI</h1>
+    <p>Google 官方推出的 Gemini 命令行工具，支持代码辅助、文件操作和多种安装方式</p>
+    <div class="doc-badge gemini">✨ Google 官方工具</div>
+  </div>
+</header>
+
+<!-- DOCS CONTENT -->
+<section class="docs-section">
+  <div class="container">
+    <div class="docs-layout">
+      
+      <!-- Sidebar -->
+      <aside class="docs-sidebar">
+        <div class="docs-nav">
+          <div class="docs-nav-title">AI 编程工具</div>
+          <nav class="docs-nav-list">
+            <a href="index.html" class="docs-nav-item">
+              <span class="docs-nav-icon">📚</span>
+              <span>文档首页</span>
+            </a>
+            <a href="claude-code.html" class="docs-nav-item">
+              <span class="docs-nav-icon">🤖</span>
+              <span>Claude Code</span>
+            </a>
+            <a href="codex.html" class="docs-nav-item">
+              <span class="docs-nav-icon">🔷</span>
+              <span>Codex CLI & App</span>
+            </a>
+            <a href="gemini.html" class="docs-nav-item active">
+              <span class="docs-nav-icon">✨</span>
+              <span>Gemini CLI</span>
+            </a>
+            <a href="opencode.html" class="docs-nav-item">
+              <span class="docs-nav-icon">💻</span>
+              <span>Opencode</span>
+            </a>
+            <a href="openclaw.html" class="docs-nav-item">
+              <span class="docs-nav-icon">🦀</span>
+              <span>OpenClaw</span>
+            </a>
+            <a href="hermes.html" class="docs-nav-item">
+              <span class="docs-nav-icon">⚡</span>
+              <span>Hermes Agent</span>
+            </a>
+          </nav>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="docs-main">
+        
+        <div class="doc-section">
+          <h2>📖 简介</h2>
+          <p>Gemini CLI 是 Google 官方推出的命令行 AI 编程助手。它可以在您的终端中运行，支持代码辅助、文件操作和各种开发任务。</p>
+          <p>Gemini CLI 预装在 Cloud Shell 和 Cloud Workstations 中，也支持本地安装。</p>
+        </div>
+
+        <div class="doc-section">
+          <h2>⚙️ 系统要求</h2>
+          <table class="req-table">
+            <thead>
+              <tr>
+                <th>组件</th>
+                <th>要求</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>操作系统</td>
+                <td>macOS 15+ / Windows 11 24H2+ / Ubuntu 20.04+</td>
+                <td>支持主流操作系统</td>
+              </tr>
+              <tr>
+                <td>Node.js</td>
+                <td>v20.0.0 或更高版本</td>
+                <td>用于 npm 安装</td>
+              </tr>
+              <tr>
+                <td>内存</td>
+                <td>4GB+ (普通) / 16GB+ (大型项目)</td>
+                <td>根据使用场景调整</td>
+              </tr>
+              <tr>
+                <td>Shell</td>
+                <td>Bash / Zsh / PowerShell</td>
+                <td>-</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="doc-section">
+          <h2>🖥️ 选择您的平台</h2>
+          <div class="platform-tabs">
+            <button class="platform-tab active" data-platform="macos-gemini">macOS</button>
+            <button class="platform-tab" data-platform="windows-gemini">Windows</button>
+            <button class="platform-tab" data-platform="linux-gemini">Linux</button>
+          </div>
+
+          <!-- macOS -->
+          <div class="platform-content active" id="macos-gemini">
+            <h3>使用 npm 安装</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 全局安装
+npm install -g @google/gemini-cli
+
+# 验证安装
+gemini --version</code></div>
+
+            <h3>使用 Homebrew 安装</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 通过 Homebrew 安装
+brew install gemini-cli
+
+# 验证安装
+gemini --version</code></div>
+
+            <h3>使用 MacPorts 安装</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code>sudo port install gemini-cli</code></div>
+
+            <h3>配置并运行</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 运行 Gemini CLI
+gemini
+
+# 首次运行会提示进行身份验证</code></div>
+
+            <div class="doc-info">
+              <div class="doc-info-title">💡 使用 Bridgemind 接入</div>
+              <p>通过配置环境变量，您可以使用 Bridgemind 提供的统一 API 接入服务：</p>
+            </div>
+
+            <div class="doc-code-label">配置 Bridgemind 服务</div>
+            <div class="doc-code"><code>export GEMINI_API_KEY="your-bridgemind-api-key"
+export GEMINI_API_BASE="https://bridgemind.pro/v1"
+gemini</code></div>
+          </div>
+
+          <!-- Windows -->
+          <div class="platform-content" id="windows-gemini">
+            <h3>使用 npm 安装</h3>
+            <div class="doc-code-label">PowerShell 或 CMD</div>
+            <div class="doc-code"><code># 全局安装
+npm install -g @google/gemini-cli
+
+# 验证安装
+gemini --version</code></div>
+
+            <h3>使用 npx 运行（无需安装）</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 直接运行，无需永久安装
+npx @google/gemini-cli</code></div>
+
+            <h3>配置 API 密钥</h3>
+            <div class="doc-code-label">PowerShell</div>
+            <div class="doc-code"><code># 设置环境变量
+$env:GEMINI_API_KEY="your-api-key-here"
+$env:GEMINI_API_BASE="https://bridgemind.pro/v1"
+
+# 运行
+gemini</code></div>
+
+            <div class="doc-code-label">CMD</div>
+            <div class="doc-code"><code>set GEMINI_API_KEY=your-api-key-here
+set GEMINI_API_BASE=https://bridgemind.pro/v1
+gemini</code></div>
+
+            <div class="doc-info">
+              <div class="doc-info-title">💡 提示</div>
+              <p>Windows 11 24H2 或更高版本可获得最佳体验。支持 PowerShell 和 CMD。</p>
+            </div>
+          </div>
+
+          <!-- Linux -->
+          <div class="platform-content" id="linux-gemini">
+            <h3>使用 npm 安装</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 安装 Node.js (如未安装)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# 全局安装 Gemini CLI
+npm install -g @google/gemini-cli
+
+# 验证安装
+gemini --version</code></div>
+
+            <h3>使用 Homebrew 安装 (Linux)</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 如果已安装 Linuxbrew
+brew install gemini-cli</code></div>
+
+            <h3>使用 Anaconda 安装</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 创建并激活环境
+conda create -y -n gemini_env -c conda-forge nodejs
+conda activate gemini_env
+
+# 安装 Gemini CLI
+npm install -g @google/gemini-cli</code></div>
+
+            <h3>配置 API 密钥</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code>export GEMINI_API_KEY="your-api-key-here"
+export GEMINI_API_BASE="https://bridgemind.pro/v1"
+gemini</code></div>
+
+            <h3>Docker 运行</h3>
+            <div class="doc-code-label">终端</div>
+            <div class="doc-code"><code># 在沙箱容器中运行
+docker run --rm -it us-docker.pkg.dev/gemini-code-dev/gemini-cli/sandbox:latest</code></div>
+          </div>
+        </div>
+
+        <div class="doc-section">
+          <h2>🚀 基本使用</h2>
+          
+          <h3>启动交互式会话</h3>
+          <div class="doc-code-label">终端</div>
+          <div class="doc-code"><code>gemini</code></div>
+
+          <h3>常用命令</h3>
+          <ul>
+            <li><code>gemini</code> - 启动交互式会话</li>
+            <li><code>gemini "your prompt"</code> - 直接发送提示</li>
+            <li><code>gemini --sandbox</code> - 在沙箱环境中运行</li>
+            <li><code>gemini --help</code> - 查看帮助</li>
+          </ul>
+
+          <h3>发布渠道</h3>
+          <ul>
+            <li><strong>stable</strong> - 稳定版（默认），每周发布</li>
+            <li><strong>preview</strong> - 预览版，包含新功能</li>
+            <li><strong>nightly</strong> - 每日构建版</li>
+          </ul>
+
+          <div class="doc-code-label">安装特定版本</div>
+          <div class="doc-code"><code># 安装预览版
+npm install -g @google/gemini-cli@preview
+
+# 安装每日构建版
+npm install -g @google/gemini-cli@nightly</code></div>
+        </div>
+
+        <div class="doc-section">
+          <h2>🔗 相关链接</h2>
+          <ul>
+            <li><a href="https://geminicli.com/docs/get-started/installation/" target="_blank" style="color: var(--accent);">Gemini CLI 官方文档</a></li>
+            <li><a href="https://github.com/google-gemini/gemini-cli" target="_blank" style="color: var(--accent);">GitHub 仓库</a></li>
+          </ul>
+        </div>
+
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<div id="footer-placeholder"></div>
+
+<script src="../scripts/components.js"></script>
+<script src="../app.js"></script>
+<script>
+document.querySelectorAll('.platform-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.platform-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const platform = tab.dataset.platform;
+    document.querySelectorAll('.platform-content').forEach(content => {
+      content.classList.remove('active');
+    });
+    document.getElementById(platform).classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

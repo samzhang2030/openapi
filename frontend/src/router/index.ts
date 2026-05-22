@@ -11,6 +11,7 @@ import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
+import { resolveDisabledPublicFeatureRedirect, routeNeedsPublicSettings } from './publicFeatureGuard'
 import { resolveDocumentTitle } from './title'
 
 /**
@@ -35,7 +36,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/HomeView.vue'),
     meta: {
       requiresAuth: false,
-      title: 'Home'
+      title: 'Home',
+      titleKey: 'home.pageTitle'
     }
   },
   {
@@ -64,7 +66,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/auth/EmailVerifyView.vue'),
     meta: {
       requiresAuth: false,
-      title: 'Verify Email'
+      title: 'Verify Email',
+      requiresEmailVerifyEnabled: true
     }
   },
   {
@@ -144,7 +147,8 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: false,
       title: 'Forgot Password',
-      titleKey: 'auth.forgotPasswordTitle'
+      titleKey: 'auth.forgotPasswordTitle',
+      requiresPasswordResetEnabled: true
     }
   },
   {
@@ -153,7 +157,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/auth/ResetPasswordView.vue'),
     meta: {
       requiresAuth: false,
-      title: 'Reset Password'
+      title: 'Reset Password',
+      requiresPasswordResetEnabled: true
     }
   },
   {
@@ -731,6 +736,22 @@ router.beforeEach(async (to, _from, next) => {
 
   // Set page title
   const appStore = useAppStore()
+
+  if (routeNeedsPublicSettings(to.meta)) {
+    if (!appStore.cachedPublicSettings) {
+      await appStore.fetchPublicSettings()
+    }
+
+    const disabledFeatureRedirect = resolveDisabledPublicFeatureRedirect(
+      to.meta,
+      appStore.cachedPublicSettings
+    )
+    if (disabledFeatureRedirect) {
+      next(disabledFeatureRedirect)
+      return
+    }
+  }
+
   // For custom pages, use menu item label as document title
   if (to.name === 'CustomPage') {
     const id = to.params.id as string

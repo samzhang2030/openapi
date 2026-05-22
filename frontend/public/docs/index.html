@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 编程工具接入文档 - Bridgemind</title>
+<meta name="description" content="Bridgemind 接入文档，提供 Claude Code、Codex CLI、Gemini CLI、Opencode、OpenClaw、Hermes 等 AI 编程工具的安装和使用教程。">
+<link rel="canonical" href="https://bridgemind.pro/docs/">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="theme-color" content="#0b1020">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Bridgemind">
+<meta property="og:title" content="AI 编程工具接入文档 - Bridgemind">
+<meta property="og:description" content="Bridgemind 接入文档，提供 Claude Code、Codex CLI、Gemini CLI、Opencode、OpenClaw、Hermes 等 AI 编程工具的安装和使用教程。">
+<meta property="og:url" content="https://bridgemind.pro/docs/">
+<meta property="og:image" content="https://bridgemind.pro/logo.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AI 编程工具接入文档 - Bridgemind">
+<meta name="twitter:description" content="Bridgemind 接入文档，提供主流 AI 编程工具的安装与接入教程。">
+<meta name="twitter:image" content="https://bridgemind.pro/logo.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "CollectionPage",
+  "name": "Bridgemind 接入文档",
+  "description": "Bridgemind 接入文档，提供主流 AI 编程工具的安装和使用教程。",
+  "url": "https://bridgemind.pro/docs/",
+  "inLanguage": "zh-CN",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "Bridgemind",
+    "url": "https://bridgemind.pro/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Bridgemind",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://bridgemind.pro/logo.png"
+    }
+  },
+  "hasPart": [
+    {
+      "@type": "WebPage",
+      "name": "Claude Code 安装教程",
+      "url": "https://bridgemind.pro/docs/claude-code.html"
+    },
+    {
+      "@type": "WebPage",
+      "name": "Codex CLI & App 安装教程",
+      "url": "https://bridgemind.pro/docs/codex.html"
+    },
+    {
+      "@type": "WebPage",
+      "name": "Gemini CLI 安装教程",
+      "url": "https://bridgemind.pro/docs/gemini.html"
+    },
+    {
+      "@type": "WebPage",
+      "name": "Opencode 安装教程",
+      "url": "https://bridgemind.pro/docs/opencode.html"
+    },
+    {
+      "@type": "WebPage",
+      "name": "OpenClaw 安装教程",
+      "url": "https://bridgemind.pro/docs/openclaw.html"
+    },
+    {
+      "@type": "WebPage",
+      "name": "Hermes Agent 安装教程",
+      "url": "https://bridgemind.pro/docs/hermes.html"
+    }
+  ]
+}
+</script>
+<link rel="stylesheet" href="../styles/common.css">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<!-- NAV -->
+<div id="nav-placeholder"></div>
+
+<!-- PAGE HEADER -->
+<header class="page-header">
+  <div class="container">
+    <h1>接入文档</h1>
+    <p>主流 AI 编程工具安装与使用教程，支持 Windows / macOS / Linux 多平台</p>
+  </div>
+</header>
+
+<!-- DOCS CONTENT -->
+<section class="docs-section">
+  <div class="container">
+    <div class="docs-layout">
+      
+      <!-- Sidebar -->
+      <aside class="docs-sidebar">
+        <div class="docs-nav">
+          <div class="docs-nav-title">AI 编程工具</div>
+          <nav class="docs-nav-list">
+            <a href="index.html" class="docs-nav-item active">
+              <span class="docs-nav-icon">📚</span>
+              <span>文档首页</span>
+            </a>
+            <a href="claude-code.html" class="docs-nav-item">
+              <span class="docs-nav-icon">🤖</span>
+              <span>Claude Code</span>
+            </a>
+            <a href="codex.html" class="docs-nav-item">
+              <span class="docs-nav-icon">🔷</span>
+              <span>Codex CLI & App</span>
+            </a>
+            <a href="gemini.html" class="docs-nav-item">
+              <span class="docs-nav-icon">✨</span>
+              <span>Gemini CLI</span>
+            </a>
+            <a href="opencode.html" class="docs-nav-item">
+              <span class="docs-nav-icon">💻</span>
+              <span>Opencode</span>
+            </a>
+            <a href="openclaw.html" class="docs-nav-item">
+              <span class="docs-nav-icon">🦀</span>
+              <span>OpenClaw</span>
+            </a>
+            <a href="hermes.html" class="docs-nav-item">
+              <span class="docs-nav-icon">⚡</span>
+              <span>Hermes Agent</span>
+            </a>
+          </nav>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="docs-main">
+        <div class="docs-intro">
+          <div class="docs-intro-copy">
+            <p class="docs-eyebrow">Public Docs</p>
+            <h2>先按你正在使用的客户端进入</h2>
+            <p>文档无需登录即可查看。真正开始接入时，只需要登录 Bridgemind 控制台创建 API Key，再把客户端里的 Base URL 和 Key 改成 Bridgemind 提供的配置即可。</p>
+            <div class="docs-intro-badges">
+              <span class="docs-intro-badge">无需登录即可先看教程</span>
+              <span class="docs-intro-badge">统一 Base URL</span>
+              <span class="docs-intro-badge">登录后创建 API Key</span>
+            </div>
+          </div>
+          <div class="docs-intro-actions">
+            <a href="/login" class="docs-primary-action">登录后创建 API Key</a>
+            <a href="/key-usage" class="docs-secondary-action">查看 Key 用量页</a>
+          </div>
+        </div>
+
+        <section class="docs-recommended">
+          <div class="docs-section-heading">
+            <div>
+              <p class="docs-section-kicker">推荐入口</p>
+              <h2>按 Claude / Codex / Gemini 分组进入</h2>
+              <p>如果你已经在使用其中一个客户端，直接打开对应教程会更快完成首次接入。</p>
+            </div>
+          </div>
+          <div class="docs-recommended-grid">
+            <a href="claude-code.html" class="docs-entry-card docs-entry-claude">
+              <div class="docs-entry-top">
+                <span class="docs-entry-label">Anthropic</span>
+                <span class="docs-entry-rank">01</span>
+              </div>
+              <div class="tool-icon claude">🤖</div>
+              <div>
+                <h3 class="docs-entry-title">Claude Code</h3>
+                <p class="docs-entry-description">适合已经在用 Claude Code 的开发者，优先看安装、认证和 Bridgemind 接入配置。</p>
+              </div>
+              <ul class="docs-entry-list">
+                <li>先完成 Claude Code 安装</li>
+                <li>登录 Bridgemind 创建 API Key</li>
+                <li>按文档替换接入地址和认证信息</li>
+              </ul>
+              <div class="docs-entry-footer">打开 Claude Code 教程</div>
+            </a>
+
+            <a href="codex.html" class="docs-entry-card docs-entry-codex">
+              <div class="docs-entry-top">
+                <span class="docs-entry-label">OpenAI</span>
+                <span class="docs-entry-rank">02</span>
+              </div>
+              <div class="tool-icon codex">🔷</div>
+              <div>
+                <h3 class="docs-entry-title">Codex CLI &amp; App</h3>
+                <p class="docs-entry-description">适合准备接入 Codex CLI 和桌面 App 的团队，重点在 Base URL、API Key 和首次验证。</p>
+              </div>
+              <ul class="docs-entry-list">
+                <li>确认 Codex 的安装方式</li>
+                <li>登录后创建 Bridgemind API Key</li>
+                <li>用正确的环境变量完成接入</li>
+              </ul>
+              <div class="docs-entry-footer">打开 Codex 教程</div>
+            </a>
+
+            <a href="gemini.html" class="docs-entry-card docs-entry-gemini">
+              <div class="docs-entry-top">
+                <span class="docs-entry-label">Google</span>
+                <span class="docs-entry-rank">03</span>
+              </div>
+              <div class="tool-icon gemini">✨</div>
+              <div>
+                <h3 class="docs-entry-title">Gemini CLI</h3>
+                <p class="docs-entry-description">适合要把 Gemini CLI 接到 Bridgemind 的用户，先看认证方式，再校验请求是否正常到达。</p>
+              </div>
+              <ul class="docs-entry-list">
+                <li>选择你的平台安装 Gemini CLI</li>
+                <li>使用 Bridgemind 创建的 API Key</li>
+                <li>接入后到 Key 用量页快速核对状态</li>
+              </ul>
+              <div class="docs-entry-footer">打开 Gemini 教程</div>
+            </a>
+          </div>
+        </section>
+
+        <div class="docs-all-tools-header">
+          <div>
+            <p class="docs-section-kicker">全部工具</p>
+            <h2>完整接入文档</h2>
+          </div>
+          <p>除了推荐入口外，Bridgemind 也支持 Opencode、OpenClaw 与 Hermes Agent 的统一接入。</p>
+        </div>
+
+        <div class="docs-tools-grid">
+          
+          <!-- Claude Code -->
+          <a href="claude-code.html" class="tool-card card">
+            <div class="tool-card-header">
+              <div class="tool-icon claude">🤖</div>
+              <div class="tool-info">
+                <h3>Claude Code</h3>
+                <p class="tool-provider">Anthropic</p>
+              </div>
+            </div>
+            <p class="tool-desc">Anthropic 官方推出的 AI 编程助手，支持终端交互、代码分析、Git 工作流等强大功能。</p>
+            <div class="tool-platforms">
+              <span class="platform-badge">Windows</span>
+              <span class="platform-badge">macOS</span>
+              <span class="platform-badge">Linux</span>
+            </div>
+          </a>
+
+          <!-- Codex CLI & App -->
+          <a href="codex.html" class="tool-card card">
+            <div class="tool-card-header">
+              <div class="tool-icon codex">🔷</div>
+              <div class="tool-info">
+                <h3>Codex CLI & App</h3>
+                <p class="tool-provider">OpenAI</p>
+              </div>
+            </div>
+            <p class="tool-desc">OpenAI 推出的编程代理工具，可以读取、修改和运行代码，支持多种模型选择。</p>
+            <div class="tool-platforms">
+              <span class="platform-badge">Windows</span>
+              <span class="platform-badge">macOS</span>
+              <span class="platform-badge">Linux</span>
+            </div>
+          </a>
+
+          <!-- Gemini CLI -->
+          <a href="gemini.html" class="tool-card card">
+            <div class="tool-card-header">
+              <div class="tool-icon gemini">✨</div>
+              <div class="tool-info">
+                <h3>Gemini CLI</h3>
+                <p class="tool-provider">Google</p>
+              </div>
+            </div>
+            <p class="tool-desc">Google 官方推出的 Gemini 命令行工具，支持代码辅助、文件操作和多种安装方式。</p>
+            <div class="tool-platforms">
+              <span class="platform-badge">Windows</span>
+              <span class="platform-badge">macOS</span>
+              <span class="platform-badge">Linux</span>
+            </div>
+          </a>
+
+          <!-- Opencode -->
+          <a href="opencode.html" class="tool-card card">
+            <div class="tool-card-header">
+              <div class="tool-icon opencode">💻</div>
+              <div class="tool-info">
+                <h3>Opencode</h3>
+                <p class="tool-provider">开源社区</p>
+              </div>
+            </div>
+            <p class="tool-desc">开源的 AI 编程代理，支持终端界面、桌面应用和 IDE 扩展多种使用方式。</p>
+            <div class="tool-platforms">
+              <span class="platform-badge">Windows</span>
+              <span class="platform-badge">macOS</span>
+              <span class="platform-badge">Linux</span>
+            </div>
+          </a>
+
+          <!-- OpenClaw -->
+          <a href="openclaw.html" class="tool-card card">
+            <div class="tool-card-header">
+              <div class="tool-icon openclaw">🦀</div>
+              <div class="tool-info">
+                <h3>OpenClaw</h3>
+                <p class="tool-provider">开源社区</p>
+              </div>
+            </div>
+            <p class="tool-desc">强大的 AI 自动化代理平台，支持多渠道消息接入和丰富的工具扩展。</p>
+            <div class="tool-platforms">
+              <span class="platform-badge">Windows</span>
+              <span class="platform-badge">macOS</span>
+              <span class="platform-badge">Linux</span>
+            </div>
+          </a>
+
+          <!-- Hermes Agent -->
+          <a href="hermes.html" class="tool-card card">
+            <div class="tool-card-header">
+              <div class="tool-icon hermes">⚡</div>
+              <div class="tool-info">
+                <h3>Hermes Agent</h3>
+                <p class="tool-provider">Nous Research</p>
+              </div>
+            </div>
+            <p class="tool-desc">具备学习能力的 AI 代理，能够从执行经验中沉淀技能、自主优化能力。</p>
+            <div class="tool-platforms">
+              <span class="platform-badge">Windows</span>
+              <span class="platform-badge">macOS</span>
+              <span class="platform-badge">Linux</span>
+            </div>
+          </a>
+
+        </div>
+
+        <div class="docs-notice">
+          <h3>📌 实际接入只需要 3 步</h3>
+          <p>先看对应客户端教程，再登录 Bridgemind 创建 API Key，最后用 Key 用量页确认请求是否正常到达。文档是公开的，真正配置时再登录即可。</p>
+          <ul>
+            <li>登录 / 注册后，在 Bridgemind 控制台创建 API Key</li>
+            <li>把客户端中的 API Base URL 改成 Bridgemind 提供的地址</li>
+            <li>接入完成后，用 Key 用量页或控制台核对请求和额度状态</li>
+          </ul>
+          <div class="docs-notice-actions">
+            <a href="/login" class="docs-primary-action">去登录 / 注册</a>
+            <a href="/key-usage" class="docs-secondary-action">打开 Key 用量页</a>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<div id="footer-placeholder"></div>
+
+<script src="../scripts/components.js"></script>
+<script src="../app.js"></script>
+</body>
+</html>

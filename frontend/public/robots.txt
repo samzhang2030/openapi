@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+
+Disallow: /api/
+Disallow: /responses
+Disallow: /responses/
+Disallow: /v1/
+Disallow: /openai/
+Disallow: /dashboard
+Disallow: /settings
+Disallow: /login
+Disallow: /admin
+
+Sitemap: https://bridgemind.pro/sitemap.xml

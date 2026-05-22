@@ -7,12 +7,53 @@ export default {
     switchToLight: '切换到浅色模式',
     switchToDark: '切换到深色模式',
     dashboard: '控制台',
-    login: '登录',
-    getStarted: '立即开始',
+    login: '登录 / 注册',
+    getStarted: '登录并创建 API Key',
     goToDashboard: '进入控制台',
+    pageTitle: '统一 AI API Gateway',
+    quickLinksTitle: '常用接入文档',
+    quickLinksDescription: '先按客户端打开对应教程，再登录创建 API Key，会更快完成首次接入。',
+    quickLinksAll: '文档首页',
+    quickLinksAllDesc: '集中查看所有支持工具和完整接入教程。',
+    quickLinksClaudeDesc: '快速完成 Claude Code 的安装、配置与接入。',
+    quickLinksCodexDesc: '按正确的 Base URL 和 API Key 配置 Codex CLI 与 App。',
+    quickLinksGeminiDesc: '使用 Bridgemind 更顺畅地完成 Gemini CLI 首次配置。',
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',
-    heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
+    heroDescription:
+      '先选对接入文档，登录后创建 API Key，再把 Base URL 切到 Bridgemind，就能统一接入 Claude、GPT、Gemini 等主流模型。',
+    heroNote: '文档公开可读，无需登录即可先看教程；真正开始使用时，只需登录后创建 API Key。',
+    heroSteps: {
+      docs: '先看文档',
+      login: '登录后创建 API Key',
+      verify: '到 Key 用量页核对'
+    },
+    onboarding: {
+      eyebrow: '首次接入',
+      title: '从注册到 API Key，三步走通 Bridgemind',
+      description: '先看对应文档，登录后创建 API Key，再用公开工具快速核对接入状态。',
+      quickAction: '查看 Key 用量页',
+      steps: {
+        docs: {
+          badge: '无需登录',
+          title: '先看接入文档',
+          desc: '从 Claude Code、Codex、Gemini CLI 等教程里选择你的工具，先把接入路径走对。',
+          action: '打开文档'
+        },
+        login: {
+          badge: '控制台',
+          title: '登录并创建密钥',
+          desc: '进入控制台后创建 API Key，统一管理额度、访问入口和后续使用情况。',
+          action: '前往登录'
+        },
+        usage: {
+          badge: '公开工具',
+          title: '接入后核对状态',
+          desc: '配置完成后，可直接通过公开用量页检查 Key 是否生效，再回控制台看更完整的数据。',
+          action: '查看用量'
+        }
+      }
+    },
     tags: {
       subscriptionToApi: '订阅转 API',
       stickySession: '会话保持',
@@ -101,9 +142,13 @@ export default {
     },
     // CTA 区块
     cta: {
-      title: '准备好开始了吗？',
-      description: '注册即可获得免费试用额度，体验一站式 AI 服务',
-      button: '免费注册'
+      title: '注册后 3 分钟拿到 API Key',
+      description: '登录 Bridgemind 后创建 API Key，把客户端 Base URL 改成 Bridgemind，即可开始统一接入。',
+      helper: '登录 / 注册后进入控制台创建 API Key，再按文档完成客户端配置。',
+      button: '注册并获取 API Key',
+      loggedInTitle: '继续在控制台创建或管理 API Key',
+      loggedInDescription: '进入控制台创建、复制或管理 API Key，查看额度与用量状态，然后按文档完成客户端接入。',
+      loggedInHelper: '完成 API Key 后，按文档替换 Base URL 和 Key 即可开始使用。'
     },
     footer: {
       allRightsReserved: '保留所有权利。'
