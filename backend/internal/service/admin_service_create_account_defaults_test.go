@@ -58,7 +58,7 @@ func (s *groupRepoStubForCreateAccountDefaults) ListActive(context.Context) ([]G
 func TestAdminServiceCreateAccountOpenAIAPIKeyDefaultsWSAndMixedDefaultGroup(t *testing.T) {
 	accountRepo := &accountRepoStubForCreateAccountDefaults{}
 	groupRepo := &groupRepoStubForCreateAccountDefaults{
-		active: []Group{{ID: 12, Name: openAIAPIKeyDefaultGroupName, Platform: "mixed", Status: StatusActive}},
+		active: []Group{{ID: 12, Name: openAIAPIKeyDefaultGroupName, Platform: PlatformOpenAI, Status: StatusActive}},
 	}
 	svc := &adminServiceImpl{accountRepo: accountRepo, groupRepo: groupRepo}
 
@@ -88,7 +88,7 @@ func TestAdminServiceCreateAccountOpenAIAPIKeyKeepsPlatformDefaultGroup(t *testi
 		activeByPlatform: map[string][]Group{
 			PlatformOpenAI: {{ID: 3, Name: PlatformOpenAI + "-default", Platform: PlatformOpenAI, Status: StatusActive}},
 		},
-		active: []Group{{ID: 12, Name: openAIAPIKeyDefaultGroupName, Platform: "mixed", Status: StatusActive}},
+		active: []Group{{ID: 12, Name: openAIAPIKeyDefaultGroupName, Platform: PlatformOpenAI, Status: StatusActive}},
 	}
 	svc := &adminServiceImpl{accountRepo: accountRepo, groupRepo: groupRepo}
 
@@ -110,7 +110,7 @@ func TestAdminServiceCreateAccountOpenAIAPIKeyKeepsPlatformDefaultGroup(t *testi
 func TestAdminServiceCreateAccountOpenAIAPIKeyPreservesExplicitPassthroughMode(t *testing.T) {
 	accountRepo := &accountRepoStubForCreateAccountDefaults{}
 	groupRepo := &groupRepoStubForCreateAccountDefaults{
-		active: []Group{{ID: 12, Name: openAIAPIKeyDefaultGroupName, Platform: "mixed", Status: StatusActive}},
+		active: []Group{{ID: 12, Name: openAIAPIKeyDefaultGroupName, Platform: PlatformOpenAI, Status: StatusActive}},
 	}
 	svc := &adminServiceImpl{accountRepo: accountRepo, groupRepo: groupRepo}
 
@@ -131,4 +131,22 @@ func TestAdminServiceCreateAccountOpenAIAPIKeyPreservesExplicitPassthroughMode(t
 	require.Equal(t, []accountCreateDefaultsBindCall{
 		{accountID: 900, groupIDs: []int64{12}},
 	}, accountRepo.bindCalls)
+}
+
+func TestAdminServiceCreateAccountOpenAIAPIKeyIgnoresMixedPlatformMixedDefaultGroup(t *testing.T) {
+	accountRepo := &accountRepoStubForCreateAccountDefaults{}
+	groupRepo := &groupRepoStubForCreateAccountDefaults{
+		active: []Group{{ID: 12, Name: openAIAPIKeyDefaultGroupName, Platform: "mixed", Status: StatusActive}},
+	}
+	svc := &adminServiceImpl{accountRepo: accountRepo, groupRepo: groupRepo}
+
+	_, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, accountRepo.created)
+	require.Empty(t, accountRepo.bindCalls)
 }
