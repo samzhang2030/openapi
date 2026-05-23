@@ -2488,7 +2488,7 @@ func (s *adminServiceImpl) appendOpenAIAPIKeyDefaultGroup(ctx context.Context, g
 		return groupIDs
 	}
 	for _, group := range groups {
-		if group.ID <= 0 || group.Name != openAIAPIKeyDefaultGroupName {
+		if group.ID <= 0 || group.Name != openAIAPIKeyDefaultGroupName || group.Platform != PlatformOpenAI {
 			continue
 		}
 		if containsInt64(groupIDs, group.ID) {
