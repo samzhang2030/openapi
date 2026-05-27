@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
+	"net/url"
 	"reflect"
 	"sort"
 	"strconv"
@@ -1313,11 +1314,24 @@ func (a *Account) IsOpenAIOAuthPassthroughEnabled() bool {
 // 字段：accounts.extra.anthropic_passthrough。
 // 字段缺失或类型不正确时，按 false（关闭）处理。
 func (a *Account) IsAnthropicAPIKeyPassthroughEnabled() bool {
-	if a == nil || a.Platform != PlatformAnthropic || a.Type != AccountTypeAPIKey || a.Extra == nil {
+	if a == nil || a.Platform != PlatformAnthropic || a.Type != AccountTypeAPIKey {
 		return false
 	}
-	enabled, ok := a.Extra["anthropic_passthrough"].(bool)
-	return ok && enabled
+	if a.Extra != nil {
+		if enabled, ok := a.Extra["anthropic_passthrough"].(bool); ok {
+			return enabled
+		}
+	}
+	return isRightCodesAnthropicRelayBaseURL(a.GetBaseURL())
+}
+
+func isRightCodesAnthropicRelayBaseURL(baseURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || parsed == nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "right.codes" || host == "www.right.codes" || strings.HasSuffix(host, ".right.codes")
 }
 
 // WebSearch 模拟三态常量

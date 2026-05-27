@@ -166,6 +166,21 @@ func createTestPayload(modelID string) (map[string]any, error) {
 	}, nil
 }
 
+func applyClaudeCodeSessionHeaderFromTestPayload(req *http.Request, payload map[string]any) {
+	if req == nil || payload == nil {
+		return
+	}
+	metadata, ok := payload["metadata"].(map[string]string)
+	if !ok {
+		return
+	}
+	parsed := ParseMetadataUserID(metadata["user_id"])
+	if parsed == nil || parsed.SessionID == "" {
+		return
+	}
+	req.Header.Set("X-Claude-Code-Session-Id", parsed.SessionID)
+}
+
 // TestAccountConnection tests an account's connection by sending a test request
 // All account types use full Claude Code client characteristics, only auth header differs
 // modelID is optional - if empty, defaults to claude.DefaultTestModel
@@ -282,6 +297,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	for key, value := range claude.DefaultHeaders {
 		req.Header.Set(key, value)
 	}
+	applyClaudeCodeSessionHeaderFromTestPayload(req, payload)
 
 	// Set authentication header
 	if useBearer {

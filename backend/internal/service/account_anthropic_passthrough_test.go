@@ -59,4 +59,29 @@ func TestAccount_IsAnthropicAPIKeyPassthroughEnabled(t *testing.T) {
 		}
 		require.False(t, openai.IsAnthropicAPIKeyPassthroughEnabled())
 	})
+
+	t.Run("Right Code 上游默认开启透传", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformAnthropic,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"base_url": "https://www.right.codes",
+			},
+		}
+		require.True(t, account.IsAnthropicAPIKeyPassthroughEnabled())
+	})
+
+	t.Run("Right Code 显式关闭优先", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformAnthropic,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"base_url": "https://api.right.codes",
+			},
+			Extra: map[string]any{
+				"anthropic_passthrough": false,
+			},
+		}
+		require.False(t, account.IsAnthropicAPIKeyPassthroughEnabled())
+	})
 }
