@@ -97,12 +97,21 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	)
 
 	apiKey := account.GetOpenAIApiKey()
+	if account.Platform == PlatformDeepSeek {
+		apiKey = account.GetDeepSeekAPIKey()
+	}
 	if apiKey == "" {
 		return nil, fmt.Errorf("account %d missing api_key", account.ID)
 	}
 	baseURL := account.GetOpenAIBaseURL()
+	if account.Platform == PlatformDeepSeek {
+		baseURL = account.GetDeepSeekBaseURL()
+	}
 	if baseURL == "" {
 		baseURL = "https://api.openai.com"
+		if account.Platform == PlatformDeepSeek {
+			baseURL = "https://api.deepseek.com"
+		}
 	}
 	validatedURL, err := s.validateUpstreamBaseURL(baseURL)
 	if err != nil {
@@ -139,7 +148,12 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	var resp *http.Response
+	if account.Platform == PlatformDeepSeek {
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, nil)
+	} else {
+		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	}
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		setOpsUpstreamError(c, 0, safeErr, "")

@@ -121,6 +121,38 @@ func TestResolveOpenAIForwardModel(t *testing.T) {
 			defaultMappedModel: "gpt-5.4",
 			expectedModel:      "gpt-5.5-openai-compact",
 		},
+		{
+			name: "maps legacy deepseek-chat to v4 pro",
+			account: &Account{
+				Platform:    PlatformDeepSeek,
+				Credentials: map[string]any{},
+			},
+			requestedModel: "deepseek-chat",
+			expectedModel:  "deepseek-v4-pro",
+		},
+		{
+			name: "keeps explicit deepseek account mapping",
+			account: &Account{
+				Platform: PlatformDeepSeek,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{
+						"deepseek-chat": "deepseek-v4-flash",
+					},
+				},
+			},
+			requestedModel: "deepseek-chat",
+			expectedModel:  "deepseek-v4-flash",
+		},
+		{
+			name: "normalizes legacy deepseek default mapping",
+			account: &Account{
+				Platform:    PlatformDeepSeek,
+				Credentials: map[string]any{},
+			},
+			requestedModel:     "deepseek-any",
+			defaultMappedModel: "deepseek-chat",
+			expectedModel:      "deepseek-any",
+		},
 	}
 
 	for _, tt := range tests {

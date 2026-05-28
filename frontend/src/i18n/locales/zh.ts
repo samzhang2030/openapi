@@ -138,6 +138,7 @@ export default {
       claude: 'Claude',
       gemini: 'Gemini',
       antigravity: 'Antigravity',
+      deepseek: 'DeepSeek',
       more: '更多'
     },
     // CTA 区块
@@ -830,10 +831,15 @@ export default {
     ccsClientSelect: {
       title: '选择客户端',
       description: '请选择您要导入到 CC-Switch 的客户端类型：',
+      mixedDescription: '这个 API Key 支持多平台模型。请选择要写入 CC-Switch 的客户端配置：',
+      codexCli: 'Codex',
+      codexCliDesc: '导入 GPT / Codex / Claude / Gemini / DeepSeek profiles',
       claudeCode: 'Claude Code',
       claudeCodeDesc: '导入为 Claude Code 配置',
       geminiCli: 'Gemini CLI',
-      geminiCliDesc: '导入为 Gemini CLI 配置'
+      geminiCliDesc: '导入为 Gemini CLI 配置',
+      deepseek: 'DeepSeek',
+      deepseekDesc: '导入为 OpenCode 聊天接口'
     },
     // 配额和有效期
     quotaLimit: '额度限制',
@@ -2177,6 +2183,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        deepseek: 'DeepSeek',
+        mixed: '全模型',
       },
       saving: '保存中...',
       noGroups: '暂无分组',
@@ -3201,6 +3209,8 @@ export default {
         anthropic: 'Anthropic',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        deepseek: 'DeepSeek',
+        mixed: '全模型',
       },
       types: {
         oauth: 'OAuth',
@@ -3500,6 +3510,10 @@ export default {
         testModeDefault: '常规请求',
         testModeCompact: 'Compact 探测',
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
+      },
+      deepseek: {
+        baseUrlHint: '留空使用官方 DeepSeek API',
+        apiKeyHint: '您的 DeepSeek API Key',
       },
       anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',
@@ -6569,6 +6583,8 @@ export default {
   // Version Badge
   version: {
     currentVersion: '当前版本',
+    currentVersionShort: '当前',
+    currentRunningVersion: '当前运行版本',
     latestVersion: '最新版本',
     upToDate: '已是最新版本',
     updateAvailable: '有新版本可用！',
@@ -6580,10 +6596,14 @@ export default {
     refresh: '刷新',
     sourceMode: '源码构建',
     sourceModeHint: '源码构建请使用 git pull 更新',
+    manualModeHint: '当前部署环境不支持在线更新，请拉取新镜像或手动替换二进制后重启服务',
     updateNow: '立即更新',
     updating: '正在更新...',
+    updateStarted: '更新已启动',
     updateComplete: '更新完成',
     updateFailed: '更新失败',
+    waitingForRestart: '正在等待服务自动重启，请保持当前页面打开',
+    updateRestartTimeout: '等待服务重启超时，请稍后刷新页面确认更新结果',
     restartRequired: '请重启服务以应用更新',
     restartNow: '立即重启',
     restarting: '正在重启...',
@@ -6957,6 +6977,8 @@ export default {
       alipayDesktopQrHint: '电脑端支付宝应展示扫码单，请刷新后重试，或确认浏览器未拦截当前支付页。',
       alipayMobileUnavailable: '当前页面未成功跳转到支付宝。',
       alipayMobileOpenHint: '请允许当前页面打开支付宝 App，或改用系统浏览器重新发起支付。',
+      alipayVerificationRequired: '上游支付网关要求先完成真人验证，当前无法自动发起支付宝支付。',
+      alipayVerificationRequiredHint: '请改用外部店铺完成滑块验证后再支付，或联系管理员切换支付通道。',
       // Structured error codes (reason strings from backend ApplicationError)
       PAYMENT_DISABLED: '支付系统已关闭',
       USER_INACTIVE: '账号已被禁用',
@@ -6969,6 +6991,8 @@ export default {
       TOO_MANY_PENDING: '待支付订单过多（最多 {max} 个），请先完成或取消现有订单',
       DAILY_LIMIT_EXCEEDED: '今日充值已达上限，剩余额度 {remaining}',
       PAYMENT_GATEWAY_ERROR: '支付方式不可用',
+      PAYMENT_GATEWAY_VERIFICATION_REQUIRED: '上游支付网关要求真人验证，当前无法自动创建支付订单。',
+      RECHARGE_SHOP_VERIFICATION_REQUIRED: '上游店铺要求真人验证，当前无法通过站内代理下单，请打开外部店铺完成验证后再试。',
       NO_AVAILABLE_INSTANCE: '暂无可用的支付通道',
       PAYMENT_PROVIDER_MISCONFIGURED: '支付通道配置错误，请联系管理员',
       WXPAY_CONFIG_MISSING_KEY: '微信支付配置缺少必填项：{key}',

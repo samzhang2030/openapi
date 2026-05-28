@@ -19,6 +19,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/deepseek"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
@@ -201,6 +202,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	if account.IsGemini() {
 		return s.testGeminiAccountConnection(c, account, modelID, prompt)
+	}
+
+	if account.IsDeepSeek() {
+		return s.testDeepSeekAccountConnection(c, account, modelID)
 	}
 
 	if account.Platform == PlatformAntigravity {
@@ -704,6 +709,38 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	}
 
 	return s.processOpenAIChatCompletionsStream(c, resp.Body)
+}
+
+// testDeepSeekAccountConnection tests a DeepSeek API key account through its OpenAI-compatible Chat Completions API.
+func (s *AccountTestService) testDeepSeekAccountConnection(c *gin.Context, account *Account, modelID string) error {
+	if account.Type != AccountTypeAPIKey {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported account type: %s", account.Type))
+	}
+
+	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		testModelID = deepseek.DefaultTestModel
+	}
+	if mappedModel, matched := account.ResolveMappedModel(testModelID); matched {
+		testModelID = mappedModel
+	}
+	testModelID = NormalizeDeepSeekModelAlias(testModelID)
+
+	authToken := account.GetDeepSeekAPIKey()
+	if authToken == "" {
+		return s.sendErrorAndEnd(c, "No API key available")
+	}
+
+	baseURL := account.GetDeepSeekBaseURL()
+	if baseURL == "" {
+		baseURL = "https://api.deepseek.com"
+	}
+	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
+	}
+
+	return s.testOpenAIChatCompletionsConnection(c, account, testModelID, "", normalizedBaseURL, authToken)
 }
 
 // testOpenAICompactConnection probes /responses/compact and persists the

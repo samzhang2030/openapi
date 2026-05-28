@@ -334,6 +334,158 @@ func TestOpenAIGatewayService_GenerateSessionHash_EmptyBodyStillEmpty(t *testing
 	require.Empty(t, svc.GenerateSessionHash(c, nil))
 }
 
+func TestOpenAIGatewayService_ForwardAsChatCompletions_DeepSeekUsesRawChatCompletions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	upstream := &tlsRecordingUpstream{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"ds-req-1"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"chatcmpl-ds",
+				"object":"chat.completion",
+				"created":1700000000,
+				"model":"deepseek-v4-pro",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}
+			}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          42,
+		Name:        "deepseek",
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-deepseek"},
+		Concurrency: 1,
+	}
+	body := []byte(`{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, upstream.doWithTLSCalls)
+	require.Equal(t, "https://api.deepseek.com/v1/chat/completions", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer sk-deepseek", upstream.lastReq.Header.Get("Authorization"))
+	require.Contains(t, string(upstream.lastBody), `"messages"`)
+	require.Contains(t, string(upstream.lastBody), `"model":"deepseek-v4-pro"`)
+	require.NotContains(t, string(upstream.lastBody), `"input"`)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"chatcmpl-ds"`)
+	require.Equal(t, 3, result.Usage.InputTokens)
+	require.Equal(t, 4, result.Usage.OutputTokens)
+	require.Equal(t, "deepseek-v4-pro", result.UpstreamModel)
+}
+
+func TestOpenAIGatewayService_ForwardDeepSeekAsResponses_ConvertsToChatAndBack(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	upstream := &tlsRecordingUpstream{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"ds-resp-1"}},
+			Body: io.NopCloser(strings.NewReader(`{
+				"id":"chatcmpl-ds",
+				"object":"chat.completion",
+				"created":1700000000,
+				"model":"deepseek-v4-pro",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}
+			}`)),
+		},
+	}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          42,
+		Name:        "deepseek",
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-deepseek"},
+		Concurrency: 1,
+	}
+	body := []byte(`{"model":"deepseek-v4-pro","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"stream":false}`)
+
+	result, err := svc.ForwardDeepSeekAsResponses(context.Background(), c, account, body, "")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, upstream.doWithTLSCalls)
+	require.Equal(t, "https://api.deepseek.com/v1/chat/completions", upstream.lastReq.URL.String())
+	require.Contains(t, string(upstream.lastBody), `"messages"`)
+	require.Contains(t, string(upstream.lastBody), `"model":"deepseek-v4-pro"`)
+	require.NotContains(t, string(upstream.lastBody), `"input"`)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"object":"response"`)
+	require.Contains(t, rec.Body.String(), `"output_text"`)
+	require.Contains(t, rec.Body.String(), `"ok"`)
+	require.Equal(t, 3, result.Usage.InputTokens)
+	require.Equal(t, 4, result.Usage.OutputTokens)
+	require.Equal(t, "deepseek-v4-pro", result.UpstreamModel)
+}
+
+func TestOpenAIGatewayService_ForwardDeepSeekAsResponses_StreamsResponsesEvents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	content := "hello"
+	upstream := &tlsRecordingUpstream{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"ds-resp-stream-1"}},
+			Body: io.NopCloser(strings.NewReader(
+				`data: {"id":"chatcmpl-ds","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-v4-pro","choices":[{"index":0,"delta":{"content":"` + content + `"},"finish_reason":null}]}` + "\n\n" +
+					`data: {"id":"chatcmpl-ds","object":"chat.completion.chunk","created":1700000000,"model":"deepseek-v4-pro","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}` + "\n\n" +
+					"data: [DONE]\n\n",
+			)),
+		},
+	}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          42,
+		Name:        "deepseek",
+		Platform:    PlatformDeepSeek,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-deepseek"},
+		Concurrency: 1,
+	}
+	body := []byte(`{"model":"deepseek-v4-pro","input":"hi","stream":true}`)
+
+	result, err := svc.ForwardDeepSeekAsResponses(context.Background(), c, account, body, "")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "event: response.created")
+	require.Contains(t, rec.Body.String(), "event: response.output_text.delta")
+	require.Contains(t, rec.Body.String(), "event: response.completed")
+	require.Contains(t, rec.Body.String(), content)
+	require.Equal(t, 3, result.Usage.InputTokens)
+	require.Equal(t, 4, result.Usage.OutputTokens)
+	require.True(t, result.Stream)
+}
+
 func (c stubConcurrencyCache) GetAccountWaitingCount(ctx context.Context, accountID int64) (int, error) {
 	if c.waitCounts != nil {
 		if count, ok := c.waitCounts[accountID]; ok {

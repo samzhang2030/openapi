@@ -65,6 +65,24 @@ func TestGetBaseURL(t *testing.T) {
 			},
 			expected: "",
 		},
+		{
+			name: "deepseek apikey without base_url returns default deepseek",
+			account: Account{
+				Type:        AccountTypeAPIKey,
+				Platform:    PlatformDeepSeek,
+				Credentials: map[string]any{},
+			},
+			expected: "https://api.deepseek.com",
+		},
+		{
+			name: "deepseek apikey with custom base_url",
+			account: Account{
+				Type:        AccountTypeAPIKey,
+				Platform:    PlatformDeepSeek,
+				Credentials: map[string]any{"base_url": "https://deepseek-proxy.example.com/v1"},
+			},
+			expected: "https://deepseek-proxy.example.com/v1",
+		},
 	}
 
 	for _, tt := range tests {

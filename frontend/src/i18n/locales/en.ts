@@ -141,6 +141,7 @@ export default {
       claude: 'Claude',
       gemini: 'Gemini',
       antigravity: 'Antigravity',
+      deepseek: 'DeepSeek',
       more: 'More'
     },
     // CTA section
@@ -832,10 +833,15 @@ export default {
     ccsClientSelect: {
       title: 'Select Client',
       description: 'Please select the client type to import to CC-Switch:',
+      mixedDescription: 'This API key supports multiple model platforms. Select the CC-Switch client configuration to import:',
+      codexCli: 'Codex',
+      codexCliDesc: 'Import GPT / Codex / Claude / Gemini / DeepSeek profiles',
       claudeCode: 'Claude Code',
       claudeCodeDesc: 'Import as Claude Code configuration',
       geminiCli: 'Gemini CLI',
       geminiCliDesc: 'Import as Gemini CLI configuration',
+      deepseek: 'DeepSeek',
+      deepseekDesc: 'Import as OpenCode chat configuration',
     },
     // Quota and expiration
     quotaLimit: 'Quota Limit',
@@ -2155,6 +2161,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        deepseek: 'DeepSeek',
+        mixed: 'All Models',
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -3022,6 +3030,8 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        deepseek: 'DeepSeek',
+        mixed: 'All Models',
       },
       types: {
         oauth: 'OAuth',
@@ -3361,6 +3371,10 @@ export default {
         testModeDefault: 'Default request',
         testModeCompact: 'Compact probe',
         modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
+      },
+      deepseek: {
+        baseUrlHint: 'Leave default for official DeepSeek API',
+        apiKeyHint: 'Your DeepSeek API Key',
       },
       anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
@@ -6417,6 +6431,8 @@ export default {
   // Version Badge
   version: {
     currentVersion: 'Current Version',
+    currentVersionShort: 'Current',
+    currentRunningVersion: 'Current running version',
     latestVersion: 'Latest Version',
     upToDate: "You're running the latest version.",
     updateAvailable: 'A new version is available!',
@@ -6428,10 +6444,15 @@ export default {
     refresh: 'Refresh',
     sourceMode: 'Source Build',
     sourceModeHint: 'Source build, use git pull to update',
+    manualModeHint:
+      'Online update is not supported in this deployment. Pull a new image or replace the binary manually, then restart the service.',
     updateNow: 'Update Now',
     updating: 'Updating...',
+    updateStarted: 'Update Started',
     updateComplete: 'Update Complete',
     updateFailed: 'Update Failed',
+    waitingForRestart: 'Waiting for the service to restart automatically. Keep this page open.',
+    updateRestartTimeout: 'Timed out while waiting for the service restart. Please refresh and check again.',
     restartRequired: 'Please restart the service to apply the update',
     restartNow: 'Restart Now',
     restarting: 'Restarting...',
@@ -6780,6 +6801,8 @@ export default {
       alipayDesktopQrHint: 'Desktop Alipay should render a QR code. Refresh and retry, or make sure the payment page was not blocked.',
       alipayMobileUnavailable: 'This page could not hand off to Alipay.',
       alipayMobileOpenHint: 'Allow the current page to open the Alipay app, or retry from the system browser.',
+      alipayVerificationRequired: 'The upstream checkout now requires an interactive human verification step before Alipay can start.',
+      alipayVerificationRequiredHint: 'Open the external shop to complete the verification first, or ask an administrator to switch the payment channel.',
       // Structured error codes (reason strings from backend ApplicationError)
       PAYMENT_DISABLED: 'Payment system is disabled.',
       USER_INACTIVE: 'Your account is disabled.',
@@ -6792,6 +6815,8 @@ export default {
       TOO_MANY_PENDING: 'Too many pending orders (max {max}). Please complete or cancel existing orders first.',
       DAILY_LIMIT_EXCEEDED: 'Daily recharge limit reached. Remaining: {remaining}.',
       PAYMENT_GATEWAY_ERROR: 'Payment method is unavailable.',
+      PAYMENT_GATEWAY_VERIFICATION_REQUIRED: 'The upstream payment gateway requires interactive verification before an order can be created.',
+      RECHARGE_SHOP_VERIFICATION_REQUIRED: 'The upstream recharge shop requires interactive verification. Open the external shop and complete verification before retrying.',
       NO_AVAILABLE_INSTANCE: 'No payment channel available right now.',
       PAYMENT_PROVIDER_MISCONFIGURED: 'Payment provider misconfigured. Please contact an administrator.',
       WXPAY_CONFIG_MISSING_KEY: 'WeChat Pay config missing required key: {key}.',

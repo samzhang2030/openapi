@@ -136,6 +136,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
 			false,
+			resolveOpenAICompatibleGatewayPlatformForModel(apiKey, reqModel),
 		)
 		if err != nil {
 			reqLog.Warn("openai_chat_completions.account_select_failed",

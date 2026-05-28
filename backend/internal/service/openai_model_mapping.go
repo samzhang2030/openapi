@@ -15,9 +15,21 @@ func resolveOpenAIForwardModel(account *Account, requestedModel, defaultMappedMo
 
 	mappedModel, matched := account.ResolveMappedModel(requestedModel)
 	if !matched && defaultMappedModel != "" && claudeMessagesDispatchFamily(requestedModel) != "" {
-		return defaultMappedModel
+		mappedModel = defaultMappedModel
+	}
+	if account.Platform == PlatformDeepSeek {
+		return NormalizeDeepSeekModelAlias(mappedModel)
 	}
 	return mappedModel
+}
+
+func NormalizeDeepSeekModelAlias(model string) string {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "deepseek-chat":
+		return "deepseek-v4-pro"
+	default:
+		return model
+	}
 }
 
 // resolveOpenAICompactForwardModel determines the compact-only upstream model

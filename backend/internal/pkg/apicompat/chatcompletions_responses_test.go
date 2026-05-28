@@ -32,6 +32,81 @@ func TestChatCompletionsToResponses_BasicText(t *testing.T) {
 	assert.Equal(t, "user", items[0].Role)
 }
 
+func TestResponsesToChatCompletionsRequest_BasicText(t *testing.T) {
+	maxTokens := 512
+	temp := 0.2
+	req := &ResponsesRequest{
+		Model:           "deepseek-chat",
+		Instructions:    "Be concise.",
+		Input:           json.RawMessage(`[{"role":"user","content":[{"type":"input_text","text":"hi"}]}]`),
+		MaxOutputTokens: &maxTokens,
+		Temperature:     &temp,
+		Stream:          true,
+	}
+
+	chatReq, err := ResponsesToChatCompletionsRequest(req)
+
+	require.NoError(t, err)
+	require.Equal(t, "deepseek-chat", chatReq.Model)
+	require.True(t, chatReq.Stream)
+	require.Equal(t, &maxTokens, chatReq.MaxTokens)
+	require.Len(t, chatReq.Messages, 2)
+	require.Equal(t, "system", chatReq.Messages[0].Role)
+	require.JSONEq(t, `"Be concise."`, string(chatReq.Messages[0].Content))
+	require.Equal(t, "user", chatReq.Messages[1].Role)
+	require.JSONEq(t, `"hi"`, string(chatReq.Messages[1].Content))
+}
+
+func TestResponsesToChatCompletionsRequestTextOnly_ConvertsImagesToText(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "deepseek-v4-pro",
+		Input: json.RawMessage(`[{"role":"user","content":[{"type":"input_text","text":"describe this"},{"type":"input_image","image_url":"data:image/png;base64,abc123"},{"type":"input_text","text":"focus on errors"}]}]`),
+	}
+
+	chatReq, err := ResponsesToChatCompletionsRequestTextOnly(req)
+
+	require.NoError(t, err)
+	require.Len(t, chatReq.Messages, 1)
+	require.Equal(t, "user", chatReq.Messages[0].Role)
+
+	var content string
+	require.NoError(t, json.Unmarshal(chatReq.Messages[0].Content, &content))
+	assert.Contains(t, content, "describe this")
+	assert.Contains(t, content, "[Image omitted")
+	assert.Contains(t, content, "focus on errors")
+	assert.NotContains(t, string(chatReq.Messages[0].Content), "image_url")
+}
+
+func TestChatCompletionsToResponsesResponse_BasicText(t *testing.T) {
+	resp := &ChatCompletionsResponse{
+		ID:      "chatcmpl-1",
+		Object:  "chat.completion",
+		Created: 1700000000,
+		Model:   "deepseek-chat",
+		Choices: []ChatChoice{{
+			Index: 0,
+			Message: ChatMessage{
+				Role:    "assistant",
+				Content: json.RawMessage(`"hello"`),
+			},
+			FinishReason: "stop",
+		}},
+		Usage: &ChatUsage{PromptTokens: 3, CompletionTokens: 4, TotalTokens: 7},
+	}
+
+	out := ChatCompletionsToResponsesResponse(resp, "deepseek-chat")
+
+	require.Equal(t, "response", out.Object)
+	require.Equal(t, "deepseek-chat", out.Model)
+	require.Equal(t, "completed", out.Status)
+	require.Len(t, out.Output, 1)
+	require.Equal(t, "message", out.Output[0].Type)
+	require.Equal(t, "hello", out.Output[0].Content[0].Text)
+	require.Equal(t, 3, out.Usage.InputTokens)
+	require.Equal(t, 4, out.Usage.OutputTokens)
+	require.Equal(t, 7, out.Usage.TotalTokens)
+}
+
 func TestChatCompletionsToResponses_SystemMessage(t *testing.T) {
 	req := &ChatCompletionsRequest{
 		Model: "gpt-4o",

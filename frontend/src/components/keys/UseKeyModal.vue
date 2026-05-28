@@ -178,11 +178,12 @@ const activeClientTab = ref<string>('claude')
 
 // Reset tabs when platform changes
 const defaultClientTab = computed(() => {
-  switch (props.platform) {
-    case 'openai':
-      return 'codex'
-    case 'gemini':
-      return 'gemini'
+	switch (props.platform) {
+	  case 'openai':
+	  case 'mixed':
+	    return 'codex'
+	  case 'gemini':
+	    return 'gemini'
     case 'antigravity':
       return 'claude'
     default:
@@ -282,15 +283,23 @@ const clientTabs = computed((): TabConfig[] => {
         { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
-    case 'antigravity':
-      return [
-        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
-        { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
-        { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
-      ]
-    default:
-      return [
-        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
+	    case 'antigravity':
+	      return [
+	        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
+	        { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
+	        { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
+	      ]
+	    case 'mixed':
+	      return [
+	        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+	        { id: 'codex-ws', label: t('keys.useKeyModal.cliTabs.codexCliWs'), icon: TerminalIcon },
+	        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
+	        { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
+	        { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
+	      ]
+	    default:
+	      return [
+	        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
   }
@@ -328,11 +337,19 @@ const platformDescription = computed(() => {
       return t('keys.useKeyModal.openai.description')
     case 'gemini':
       return t('keys.useKeyModal.gemini.description')
-    case 'antigravity':
-      return t('keys.useKeyModal.antigravity.description')
-    default:
-      return t('keys.useKeyModal.description')
-  }
+	    case 'antigravity':
+	      return t('keys.useKeyModal.antigravity.description')
+	    case 'mixed':
+	      if (activeClientTab.value === 'gemini') {
+	        return t('keys.useKeyModal.gemini.description')
+	      }
+	      if (activeClientTab.value === 'claude') {
+	        return t('keys.useKeyModal.description')
+	      }
+	      return t('keys.useKeyModal.openai.description')
+	    default:
+	      return t('keys.useKeyModal.description')
+	  }
 })
 
 const platformNote = computed(() => {
@@ -346,13 +363,23 @@ const platformNote = computed(() => {
         : t('keys.useKeyModal.openai.note')
     case 'gemini':
       return t('keys.useKeyModal.gemini.note')
-    case 'antigravity':
-      return activeClientTab.value === 'claude'
-        ? t('keys.useKeyModal.antigravity.claudeNote')
-        : t('keys.useKeyModal.antigravity.geminiNote')
-    default:
-      return t('keys.useKeyModal.note')
-  }
+	    case 'antigravity':
+	      return activeClientTab.value === 'claude'
+	        ? t('keys.useKeyModal.antigravity.claudeNote')
+	        : t('keys.useKeyModal.antigravity.geminiNote')
+	    case 'mixed':
+	      if (activeClientTab.value === 'gemini') {
+	        return t('keys.useKeyModal.gemini.note')
+	      }
+	      if (activeClientTab.value === 'claude') {
+	        return t('keys.useKeyModal.note')
+	      }
+	      return activeTab.value === 'windows'
+	        ? t('keys.useKeyModal.openai.noteWindows')
+	        : t('keys.useKeyModal.openai.note')
+	    default:
+	      return t('keys.useKeyModal.note')
+	  }
 })
 
 const showPlatformNote = computed(() => activeClientTab.value !== 'opencode')
@@ -402,14 +429,16 @@ const currentFiles = computed((): FileConfig[] => {
         return [generateOpenCodeConfig('openai', apiBase, apiKey)]
       case 'gemini':
         return [generateOpenCodeConfig('gemini', geminiBase, apiKey)]
-      case 'antigravity':
-        return [
-          generateOpenCodeConfig('antigravity-claude', antigravityBase, apiKey, 'opencode.json (Claude)'),
-          generateOpenCodeConfig('antigravity-gemini', antigravityGeminiBase, apiKey, 'opencode.json (Gemini)')
-        ]
-      default:
-        return [generateOpenCodeConfig('openai', apiBase, apiKey)]
-    }
+	      case 'antigravity':
+	        return [
+	          generateOpenCodeConfig('antigravity-claude', antigravityBase, apiKey, 'opencode.json (Claude)'),
+	          generateOpenCodeConfig('antigravity-gemini', antigravityGeminiBase, apiKey, 'opencode.json (Gemini)')
+	        ]
+	      case 'mixed':
+	        return [generateOpenCodeConfig('openai', apiBase, apiKey, 'opencode.json', true)]
+	      default:
+	        return [generateOpenCodeConfig('openai', apiBase, apiKey)]
+	    }
   }
 
   switch (props.platform) {
@@ -423,14 +452,25 @@ const currentFiles = computed((): FileConfig[] => {
       return generateOpenAIFiles(baseUrl, apiKey)
     case 'gemini':
       return [generateGeminiCliContent(baseUrl, apiKey)]
-    case 'antigravity':
-      if (activeClientTab.value === 'gemini') {
-        return [generateGeminiCliContent(`${baseUrl}/antigravity`, apiKey)]
-      }
-      return generateAnthropicFiles(`${baseUrl}/antigravity`, apiKey)
-    default:
-      return generateAnthropicFiles(baseUrl, apiKey)
-  }
+	    case 'antigravity':
+	      if (activeClientTab.value === 'gemini') {
+	        return [generateGeminiCliContent(`${baseUrl}/antigravity`, apiKey)]
+	      }
+	      return generateAnthropicFiles(`${baseUrl}/antigravity`, apiKey)
+	    case 'mixed':
+	      if (activeClientTab.value === 'claude') {
+	        return generateAnthropicFiles(baseUrl, apiKey)
+	      }
+	      if (activeClientTab.value === 'gemini') {
+	        return [generateGeminiCliContent(baseUrl, apiKey)]
+	      }
+	      if (activeClientTab.value === 'codex-ws') {
+	        return generateOpenAIWsFiles(baseUrl, apiKey)
+	      }
+	      return generateOpenAIFiles(baseUrl, apiKey)
+	    default:
+	      return generateAnthropicFiles(baseUrl, apiKey)
+	  }
 })
 
 function generateAnthropicFiles(baseUrl: string, apiKey: string): FileConfig[] {
@@ -607,7 +647,7 @@ responses_websockets_v2 = true`
   ]
 }
 
-function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: string, pathLabel?: string): FileConfig {
+function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: string, pathLabel?: string, includeMixedModels = false): FileConfig {
   const provider: Record<string, any> = {
     [platform]: {
       options: {
@@ -965,59 +1005,77 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       }
     }
   }
-  const claudeModels = {
-    'claude-opus-4-6-thinking': {
-      name: 'Claude 4.6 Opus (Thinking)',
-      limit: {
-        context: 200000,
-        output: 128000
-      },
-      modalities: {
-        input: ['text', 'image', 'pdf'],
-        output: ['text']
-      },
-      options: {
-        thinking: {
-          budgetTokens: 24576,
-          type: 'enabled'
-        }
-      }
-    },
-    'claude-sonnet-4-6': {
-      name: 'Claude 4.6 Sonnet',
-      limit: {
-        context: 200000,
-        output: 64000
-      },
-      modalities: {
-        input: ['text', 'image', 'pdf'],
-        output: ['text']
-      },
-      options: {
-        thinking: {
-          budgetTokens: 24576,
-          type: 'enabled'
-        }
-      }
-    }
-  }
+	  const claudeModels = {
+	    'claude-opus-4-6-thinking': {
+	      name: 'Claude 4.6 Opus (Thinking)',
+	      limit: {
+	        context: 200000,
+	        output: 128000
+	      },
+	      modalities: {
+	        input: ['text', 'image', 'pdf'],
+	        output: ['text']
+	      },
+	      options: {
+	        thinking: {
+	          budgetTokens: 24576,
+	          type: 'enabled'
+	        }
+	      }
+	    },
+	    'claude-sonnet-4-6': {
+	      name: 'Claude 4.6 Sonnet',
+	      limit: {
+	        context: 200000,
+	        output: 64000
+	      },
+	      modalities: {
+	        input: ['text', 'image', 'pdf'],
+	        output: ['text']
+	      },
+	      options: {
+	        thinking: {
+	          budgetTokens: 24576,
+	          type: 'enabled'
+	        }
+	      }
+	    }
+	  }
+	  const deepseekModels = {
+	    'deepseek-v4-pro': {
+	      name: 'DeepSeek V4 Pro',
+	      limit: {
+	        context: 1000000,
+	        output: 384000
+	      }
+	    },
+	    'deepseek-v4-flash': {
+	      name: 'DeepSeek V4 Flash',
+	      limit: {
+	        context: 1000000,
+	        output: 384000
+	      }
+	    }
+	  }
 
-  if (platform === 'gemini') {
-    provider[platform].npm = '@ai-sdk/google'
-    provider[platform].models = geminiModels
-  } else if (platform === 'anthropic') {
-    provider[platform].npm = '@ai-sdk/anthropic'
-  } else if (platform === 'antigravity-claude') {
-    provider[platform].npm = '@ai-sdk/anthropic'
-    provider[platform].name = 'Antigravity (Claude)'
-    provider[platform].models = claudeModels
-  } else if (platform === 'antigravity-gemini') {
-    provider[platform].npm = '@ai-sdk/google'
-    provider[platform].name = 'Antigravity (Gemini)'
-    provider[platform].models = antigravityGeminiModels
-  } else if (platform === 'openai') {
-    provider[platform].models = openaiModels
-  }
+	  if (platform === 'gemini') {
+	    provider[platform].npm = '@ai-sdk/google'
+	    provider[platform].models = geminiModels
+	  } else if (platform === 'anthropic') {
+	    provider[platform].npm = '@ai-sdk/anthropic'
+	  } else if (platform === 'antigravity-claude') {
+	    provider[platform].npm = '@ai-sdk/anthropic'
+	    provider[platform].name = 'Antigravity (Claude)'
+	    provider[platform].models = claudeModels
+	  } else if (platform === 'antigravity-gemini') {
+	    provider[platform].npm = '@ai-sdk/google'
+	    provider[platform].name = 'Antigravity (Gemini)'
+	    provider[platform].models = antigravityGeminiModels
+	  } else if (platform === 'openai') {
+	    provider[platform].models = includeMixedModels
+	      ? { ...openaiModels, ...claudeModels, ...geminiModels, ...deepseekModels }
+	      : openaiModels
+	  }
 
   const agent =
     platform === 'openai'

@@ -930,7 +930,7 @@
       @close="closeUseKeyModal"
     />
 
-    <!-- CCS Client Selection Dialog for Antigravity -->
+    <!-- CCS Client Selection Dialog -->
     <BaseDialog
       :show="showCcsClientSelect"
       :title="t('keys.ccsClientSelect.title')"
@@ -939,9 +939,22 @@
     >
       <div class="space-y-4">
         <p class="text-sm text-gray-600 dark:text-gray-400">
-          {{ t('keys.ccsClientSelect.description') }}
+          {{ ccsClientSelectDescription }}
 	        </p>
 	        <div class="grid grid-cols-2 gap-3">
+            <button
+              v-if="showMixedCcsOptions"
+              @click="handleCcsClientSelect('codex')"
+              class="flex flex-col items-center gap-2 rounded-xl border-2 border-gray-200 p-4 transition-all hover:border-primary-500 hover:bg-primary-50 dark:border-dark-600 dark:hover:border-primary-500 dark:hover:bg-primary-900/20"
+            >
+              <Icon name="terminal" size="xl" class="text-gray-600 dark:text-gray-400" />
+              <span class="font-medium text-gray-900 dark:text-white">{{
+                t('keys.ccsClientSelect.codexCli')
+              }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{
+                t('keys.ccsClientSelect.codexCliDesc')
+              }}</span>
+            </button>
 	          <button
 	            @click="handleCcsClientSelect('claude')"
 	            class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 dark:border-dark-600 hover:border-primary-500 dark:hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all"
@@ -966,6 +979,19 @@
 	              t('keys.ccsClientSelect.geminiCliDesc')
 	            }}</span>
 	          </button>
+            <button
+              v-if="showMixedCcsOptions"
+              @click="handleCcsClientSelect('deepseek')"
+              class="flex flex-col items-center gap-2 rounded-xl border-2 border-gray-200 p-4 transition-all hover:border-primary-500 hover:bg-primary-50 dark:border-dark-600 dark:hover:border-primary-500 dark:hover:bg-primary-900/20"
+            >
+              <Icon name="bolt" size="xl" class="text-gray-600 dark:text-gray-400" />
+              <span class="font-medium text-gray-900 dark:text-white">{{
+                t('keys.ccsClientSelect.deepseek')
+              }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">{{
+                t('keys.ccsClientSelect.deepseekDesc')
+              }}</span>
+            </button>
 	        </div>
 	      </div>
       <template #footer>
@@ -1073,10 +1099,7 @@ import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
-import {
-  buildCcSwitchImportDeeplink,
-  type CcSwitchClientType
-} from '@/utils/ccswitchImport'
+import { buildCcsImportDeeplink, type CcsClientType } from '@/utils/ccswitchImport'
 
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
@@ -1153,6 +1176,13 @@ const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
 const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 let abortController: AbortController | null = null
+
+const showMixedCcsOptions = computed(() => pendingCcsRow.value?.group?.platform === 'mixed')
+const ccsClientSelectDescription = computed(() =>
+  showMixedCcsOptions.value
+    ? t('keys.ccsClientSelect.mixedDescription')
+    : t('keys.ccsClientSelect.description')
+)
 
 // Get the currently selected key for group change
 const selectedKeyForGroup = computed(() => {
@@ -1693,45 +1723,35 @@ const resetRateLimitUsage = async () => {
 const importToCcswitch = (row: ApiKey) => {
   const platform = row.group?.platform || 'anthropic'
 
-  // For antigravity platform, show client selection dialog
-  if (platform === 'antigravity') {
+  // Antigravity and mixed keys can be imported into multiple CCS client types.
+  if (platform === 'antigravity' || platform === 'mixed') {
     pendingCcsRow.value = row
     showCcsClientSelect.value = true
     return
   }
 
-  // For other platforms, execute directly
-  executeCcsImport(row, platform === 'gemini' ? 'gemini' : 'claude')
+  const clientType: CcsClientType =
+    platform === 'gemini'
+      ? 'gemini'
+      : platform === 'deepseek'
+        ? 'deepseek'
+        : platform === 'openai'
+          ? 'codex'
+          : 'claude'
+
+  executeCcsImport(row, clientType)
 }
 
-const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
+const executeCcsImport = (row: ApiKey, clientType: CcsClientType) => {
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const platform = row.group?.platform || 'anthropic'
-
-  const usageScript = `({
-    request: {
-      url: "{{baseUrl}}/v1/usage",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
-      return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
-        remaining,
-        unit
-      };
-    }
-  })`
   const providerName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
-  const deeplink = buildCcSwitchImportDeeplink({
+  const deeplink = buildCcsImportDeeplink({
+    apiKey: row.key,
     baseUrl,
+    providerName,
     platform,
     clientType,
-    providerName,
-    apiKey: row.key,
-    usageScript
   })
 
   try {
@@ -1749,7 +1769,7 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   }
 }
 
-const handleCcsClientSelect = (clientType: CcSwitchClientType) => {
+const handleCcsClientSelect = (clientType: CcsClientType) => {
   if (pendingCcsRow.value) {
     executeCcsImport(pendingCcsRow.value, clientType)
   }

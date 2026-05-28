@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -9,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 // RegisterGatewayRoutes 注册 API 网关路由（Claude/OpenAI/Gemini 兼容）
@@ -42,7 +45,7 @@ func RegisterGatewayRoutes(
 	{
 		// /v1/messages: auto-route based on group platform
 		gateway.POST("/messages", func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformOpenAI {
+			if shouldUseOpenAICompatibleMessagesGateway(c) {
 				h.OpenAIGateway.Messages(c)
 				return
 			}
@@ -66,14 +69,14 @@ func RegisterGatewayRoutes(
 		gateway.GET("/usage", h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformOpenAI {
+			if shouldUseOpenAICompatibleResponsesGateway(c) {
 				h.OpenAIGateway.Responses(c)
 				return
 			}
 			h.Gateway.Responses(c)
 		})
 		gateway.POST("/responses/*subpath", func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformOpenAI {
+			if shouldUseOpenAICompatibleResponsesGateway(c) {
 				h.OpenAIGateway.Responses(c)
 				return
 			}
@@ -82,7 +85,51 @@ func RegisterGatewayRoutes(
 		gateway.GET("/responses", h.OpenAIGateway.ResponsesWebSocket)
 		// OpenAI Chat Completions API: auto-route based on group platform
 		gateway.POST("/chat/completions", func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformOpenAI {
+			if shouldUseOpenAICompatibleChatGateway(c) {
+				h.OpenAIGateway.ChatCompletions(c)
+				return
+			}
+			h.Gateway.ChatCompletions(c)
+		})
+	}
+
+	// CCS V4 alias. This intentionally uses a distinct base URL from /v1 so
+	// desktop import tools do not keep reusing an older local "bridgemind"
+	// provider while the gateway behavior remains identical.
+	gatewayV4 := r.Group("/v4")
+	gatewayV4.Use(bodyLimit)
+	gatewayV4.Use(clientRequestID)
+	gatewayV4.Use(opsErrorLogger)
+	gatewayV4.Use(endpointNorm)
+	gatewayV4.Use(gin.HandlerFunc(apiKeyAuth))
+	gatewayV4.Use(requireGroupAnthropic)
+	{
+		gatewayV4.POST("/messages", func(c *gin.Context) {
+			if shouldUseOpenAICompatibleMessagesGateway(c) {
+				h.OpenAIGateway.Messages(c)
+				return
+			}
+			h.Gateway.Messages(c)
+		})
+		gatewayV4.GET("/models", h.Gateway.Models)
+		gatewayV4.GET("/usage", h.Gateway.Usage)
+		gatewayV4.POST("/responses", func(c *gin.Context) {
+			if shouldUseOpenAICompatibleResponsesGateway(c) {
+				h.OpenAIGateway.Responses(c)
+				return
+			}
+			h.Gateway.Responses(c)
+		})
+		gatewayV4.POST("/responses/*subpath", func(c *gin.Context) {
+			if shouldUseOpenAICompatibleResponsesGateway(c) {
+				h.OpenAIGateway.Responses(c)
+				return
+			}
+			h.Gateway.Responses(c)
+		})
+		gatewayV4.GET("/responses", h.OpenAIGateway.ResponsesWebSocket)
+		gatewayV4.POST("/chat/completions", func(c *gin.Context) {
+			if shouldUseOpenAICompatibleChatGateway(c) {
 				h.OpenAIGateway.ChatCompletions(c)
 				return
 			}
@@ -131,7 +178,7 @@ func RegisterGatewayRoutes(
 
 	// OpenAI Responses API（不带v1前缀的别名）— auto-route based on group platform
 	responsesHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformOpenAI {
+		if shouldUseOpenAICompatibleResponsesGateway(c) {
 			h.OpenAIGateway.Responses(c)
 			return
 		}
@@ -149,7 +196,7 @@ func RegisterGatewayRoutes(
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
 	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformOpenAI {
+		if shouldUseOpenAICompatibleChatGateway(c) {
 			h.OpenAIGateway.ChatCompletions(c)
 			return
 		}
@@ -222,4 +269,59 @@ func getGroupPlatform(c *gin.Context) string {
 		return ""
 	}
 	return apiKey.Group.Platform
+}
+
+func isOpenAICompatibleGatewayPlatform(platform string) bool {
+	switch platform {
+	case service.PlatformOpenAI, service.PlatformDeepSeek:
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldUseOpenAICompatibleResponsesGateway(c *gin.Context) bool {
+	platform := getGroupPlatform(c)
+	if platform == service.PlatformMixed {
+		model := peekJSONModel(c)
+		runtimePlatform := service.ResolveMixedModelPlatform(model)
+		return runtimePlatform == service.PlatformOpenAI || runtimePlatform == service.PlatformDeepSeek
+	}
+	return isOpenAICompatibleGatewayPlatform(platform)
+}
+
+func shouldUseOpenAICompatibleMessagesGateway(c *gin.Context) bool {
+	platform := getGroupPlatform(c)
+	if platform == service.PlatformMixed {
+		model := peekJSONModel(c)
+		runtimePlatform := service.ResolveMixedModelPlatform(model)
+		return runtimePlatform == service.PlatformOpenAI || runtimePlatform == service.PlatformDeepSeek
+	}
+	return isOpenAICompatibleGatewayPlatform(platform)
+}
+
+func shouldUseOpenAICompatibleChatGateway(c *gin.Context) bool {
+	platform := getGroupPlatform(c)
+	if platform == service.PlatformMixed {
+		model := peekJSONModel(c)
+		runtimePlatform := service.ResolveMixedModelPlatform(model)
+		return runtimePlatform == service.PlatformOpenAI || runtimePlatform == service.PlatformDeepSeek
+	}
+	return isOpenAICompatibleGatewayPlatform(platform)
+}
+
+func peekJSONModel(c *gin.Context) string {
+	if c == nil || c.Request == nil || c.Request.Body == nil {
+		return ""
+	}
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
+		return ""
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	if !gjson.ValidBytes(body) {
+		return ""
+	}
+	return gjson.GetBytes(body, "model").String()
 }

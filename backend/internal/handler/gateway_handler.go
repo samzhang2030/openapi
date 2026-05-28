@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/deepseek"
 	pkgerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
@@ -953,48 +954,151 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		platform = forcedPlatform
 	}
 
-	// Get available models from account configurations for the selected group platform.
-	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
-
-	if len(availableModels) > 0 {
-		// Build model list from whitelist
-		models := make([]claude.Model, 0, len(availableModels))
-		for _, modelID := range availableModels {
-			models = append(models, claude.Model{
-				ID:          modelID,
-				Type:        "model",
-				DisplayName: modelID,
-				CreatedAt:   "2024-01-01T00:00:00Z",
-			})
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   models,
-		})
-		return
-	}
-
-	// Fallback to default models
-	if platform == service.PlatformOpenAI {
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   openai.DefaultModels,
-		})
-		return
-	}
-
-	if platform == service.PlatformGemini {
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   geminicli.DefaultModels,
-		})
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
-		"data":   claude.DefaultModels,
+		"data":   modelsForListResponse(platform, h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")),
 	})
+}
+
+func modelsForListResponse(platform string, availableModels []string) any {
+	if len(availableModels) == 0 {
+		return defaultModelsForPlatform(platform)
+	}
+
+	if platform == service.PlatformMixed {
+		return mixedModelsWithMappedModels(availableModels)
+	}
+
+	models := make([]claude.Model, 0, len(availableModels))
+	seen := make(map[string]struct{}, len(availableModels))
+	for _, modelID := range availableModels {
+		modelID = normalizeListedModelID(platform, modelID)
+		if modelID == "" {
+			continue
+		}
+		if _, ok := seen[modelID]; ok {
+			continue
+		}
+		seen[modelID] = struct{}{}
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	return models
+}
+
+func normalizeListedModelID(platform string, modelID string) string {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return ""
+	}
+	if platform == service.PlatformDeepSeek ||
+		(platform == service.PlatformMixed && service.ResolveMixedModelPlatform(modelID) == service.PlatformDeepSeek) {
+		return service.NormalizeDeepSeekModelAlias(modelID)
+	}
+	return modelID
+}
+
+func defaultModelsForPlatform(platform string) any {
+	switch platform {
+	case service.PlatformOpenAI:
+		return openai.DefaultModels
+	case service.PlatformDeepSeek:
+		return deepseek.DefaultModels
+	case service.PlatformGemini:
+		return geminicli.DefaultModels
+	case service.PlatformMixed:
+		return mixedDefaultModels()
+	default:
+		return claude.DefaultModels
+	}
+}
+
+func mixedModelsWithMappedModels(availableModels []string) []gin.H {
+	models := mixedDefaultModels()
+	seen := make(map[string]struct{}, len(models)+len(availableModels))
+	for _, model := range models {
+		id, _ := model["id"].(string)
+		if id != "" {
+			seen[id] = struct{}{}
+		}
+	}
+	for _, modelID := range availableModels {
+		modelID = normalizeListedModelID(service.PlatformMixed, modelID)
+		if modelID == "" {
+			continue
+		}
+		if _, ok := seen[modelID]; ok {
+			continue
+		}
+		seen[modelID] = struct{}{}
+		models = append(models, openAICompatibleModel(modelID, "mixed", modelID, 1704067200))
+	}
+	return models
+}
+
+func mixedDefaultModels() []gin.H {
+	models := make([]gin.H, 0, len(openai.DefaultModels)+len(claude.DefaultModels)+len(geminicli.DefaultModels)+len(deepseek.DefaultModels))
+	seen := make(map[string]struct{})
+	add := func(model gin.H) {
+		id, _ := model["id"].(string)
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		models = append(models, model)
+	}
+	for _, m := range openai.DefaultModels {
+		add(openAICompatibleModel(m.ID, m.OwnedBy, m.DisplayName, m.Created))
+	}
+	for _, m := range claude.DefaultModels {
+		add(openAICompatibleModel(m.ID, "anthropic", m.DisplayName, parseModelCreatedAt(m.CreatedAt)))
+	}
+	for _, m := range geminicli.DefaultModels {
+		add(openAICompatibleModel(m.ID, "google", m.DisplayName, parseModelCreatedAt(m.CreatedAt)))
+	}
+	for _, m := range deepseek.DefaultModels {
+		add(openAICompatibleModel(m.ID, m.OwnedBy, m.DisplayName, m.Created))
+	}
+	return models
+}
+
+func openAICompatibleModel(id, ownedBy, displayName string, created int64) gin.H {
+	if displayName == "" {
+		displayName = id
+	}
+	if ownedBy == "" {
+		ownedBy = "bridgemind"
+	}
+	if created == 0 {
+		created = 1704067200
+	}
+	return gin.H{
+		"id":           id,
+		"object":       "model",
+		"created":      created,
+		"owned_by":     ownedBy,
+		"type":         "model",
+		"display_name": displayName,
+	}
+}
+
+func parseModelCreatedAt(createdAt string) int64 {
+	createdAt = strings.TrimSpace(createdAt)
+	if createdAt == "" {
+		return 1704067200
+	}
+	t, err := time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return 1704067200
+	}
+	return t.Unix()
 }
 
 // AntigravityModels 返回 Antigravity 支持的全部模型

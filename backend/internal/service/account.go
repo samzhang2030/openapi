@@ -724,6 +724,9 @@ func (a *Account) GetBaseURL() string {
 	if a.Type != AccountTypeAPIKey {
 		return ""
 	}
+	if a.Platform == PlatformDeepSeek {
+		return a.GetDeepSeekBaseURL()
+	}
 	baseURL := a.GetCredential("base_url")
 	if baseURL == "" {
 		return "https://api.anthropic.com"
@@ -966,6 +969,10 @@ func (a *Account) IsOpenAI() bool {
 	return a.Platform == PlatformOpenAI
 }
 
+func (a *Account) IsDeepSeek() bool {
+	return a.Platform == PlatformDeepSeek
+}
+
 func (a *Account) IsAnthropic() bool {
 	return a.Platform == PlatformAnthropic
 }
@@ -976,6 +983,10 @@ func (a *Account) IsOpenAIOAuth() bool {
 
 func (a *Account) IsOpenAIApiKey() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeAPIKey
+}
+
+func (a *Account) IsDeepSeekAPIKey() bool {
+	return a.IsDeepSeek() && a.Type == AccountTypeAPIKey
 }
 
 func (a *Account) GetOpenAIBaseURL() string {
@@ -989,6 +1000,17 @@ func (a *Account) GetOpenAIBaseURL() string {
 		}
 	}
 	return "https://api.openai.com"
+}
+
+func (a *Account) GetDeepSeekBaseURL() string {
+	if !a.IsDeepSeekAPIKey() {
+		return ""
+	}
+	baseURL := strings.TrimSpace(a.GetCredential("base_url"))
+	if baseURL == "" {
+		return "https://api.deepseek.com"
+	}
+	return baseURL
 }
 
 func (a *Account) GetOpenAIAccessToken() string {
@@ -1014,6 +1036,13 @@ func (a *Account) GetOpenAIIDToken() string {
 
 func (a *Account) GetOpenAIApiKey() string {
 	if !a.IsOpenAIApiKey() {
+		return ""
+	}
+	return a.GetCredential("api_key")
+}
+
+func (a *Account) GetDeepSeekAPIKey() string {
+	if !a.IsDeepSeekAPIKey() {
 		return ""
 	}
 	return a.GetCredential("api_key")

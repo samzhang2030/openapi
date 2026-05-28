@@ -1,67 +1,128 @@
 import { describe, expect, it } from 'vitest'
-import {
-  OPENAI_CC_SWITCH_CODEX_MODEL,
-  buildCcSwitchImportDeeplink
-} from '@/utils/ccswitchImport'
-import type { GroupPlatform } from '@/types'
+import { buildCcsImportDeeplink, decodeCcsBase64JsonParam } from '../ccswitchImport'
 
-function paramsFromDeeplink(deeplink: string): URLSearchParams {
-  const query = deeplink.split('?')[1] || ''
-  return new URLSearchParams(query)
+const sanitizeLikeCurrentCcs = (name: string) => {
+  const key = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return key || 'custom'
 }
 
-describe('ccswitchImport utils', () => {
-  const baseInput = {
-    baseUrl: 'https://api.example.com',
-    providerName: 'Sub2API',
-    apiKey: 'sk-test',
-    usageScript: 'return true'
-  }
+const simulateCurrentCcsCodexImportConfig = (url: URL) => {
+  const providerName = url.searchParams.get('name') || 'custom'
+  const providerKey = sanitizeLikeCurrentCcs(providerName)
+  const model = url.searchParams.get('model') || 'gpt-5-codex'
+  const endpoint = (url.searchParams.get('endpoint') || '').replace(/\/+$/, '')
 
-  it('adds the Codex model parameter for OpenAI imports', () => {
-    const params = paramsFromDeeplink(
-      buildCcSwitchImportDeeplink({
-        ...baseInput,
-        platform: 'openai',
-        clientType: 'claude'
-      })
+  return `model_provider = "${providerKey}"
+model = "${model}"
+model_reasoning_effort = "high"
+disable_response_storage = true
+
+[model_providers.${providerKey}]
+name = "${providerKey}"
+base_url = "${endpoint}"
+wire_api = "responses"
+requires_openai_auth = true
+`
+}
+
+describe('ccswitchImport', () => {
+  it('builds a mixed Codex import with visible multi-model profiles', () => {
+    const deeplink = buildCcsImportDeeplink({
+      apiKey: 'sk-test',
+      baseUrl: 'https://bridgemind.pro/v1',
+      providerName: 'BridgeMind',
+      platform: 'mixed',
+      clientType: 'codex',
+    })
+
+    const url = new URL(deeplink)
+    expect(url.protocol).toBe('ccswitch:')
+    expect(url.searchParams.get('app')).toBe('codex')
+    expect(url.searchParams.get('name')).toBe('BridgeMind')
+    expect(url.searchParams.get('homepage')).toBe('https://bridgemind.pro/v1')
+    expect(url.searchParams.get('endpoint')).toBe('https://bridgemind.pro/v1')
+    expect(url.searchParams.get('model')).toContain('gpt-5.5')
+    expect(url.searchParams.get('model')).toContain('[profiles.claude]')
+    expect(url.searchParams.get('model')).toContain('[profiles.gemini]')
+    expect(url.searchParams.get('model')).toContain('[profiles.deepseek]')
+    expect(url.searchParams.get('notes')).toContain('claude=claude-sonnet-4-6')
+    expect(url.searchParams.get('notes')).toContain('gemini=gemini-2.5-pro')
+    expect(url.searchParams.get('notes')).toContain('deepseek=deepseek-v4-pro')
+
+    const config = decodeCcsBase64JsonParam<{ auth: Record<string, string>; config: string }>(
+      url.searchParams.get('config') || '',
     )
-
-    expect(params.get('resource')).toBe('provider')
-    expect(params.get('app')).toBe('codex')
-    expect(params.get('endpoint')).toBe(baseInput.baseUrl)
-    expect(params.get('model')).toBe(OPENAI_CC_SWITCH_CODEX_MODEL)
-    expect(atob(params.get('usageScript') || '')).toBe(baseInput.usageScript)
+    expect(config.auth.OPENAI_API_KEY).toBe('sk-test')
+    expect(config.config).toContain('[profiles.gpt]')
+    expect(config.config).toContain('model = "gpt-5.5"')
+    expect(config.config).toContain('[profiles.codex]')
+    expect(config.config).toContain('model = "gpt-5.3-codex"')
+    expect(config.config).toContain('[profiles.claude]')
+    expect(config.config).toContain('model = "claude-sonnet-4-6"')
+    expect(config.config).toContain('[profiles.gemini]')
+    expect(config.config).toContain('model = "gemini-2.5-pro"')
+    expect(config.config).toContain('[profiles.deepseek]')
+    expect(config.config).toContain('model = "deepseek-v4-pro"')
+    expect(config.config).toContain('[model_providers.bridgemind]')
+    expect(config.config).toContain('base_url = "https://bridgemind.pro/v1"')
   })
 
-  it.each([
-    { platform: 'anthropic' as GroupPlatform, clientType: 'claude' as const, app: 'claude' },
-    { platform: 'gemini' as GroupPlatform, clientType: 'gemini' as const, app: 'gemini' }
-  ])('does not add a model parameter for $platform imports', ({ platform, clientType, app }) => {
-    const params = paramsFromDeeplink(
-      buildCcSwitchImportDeeplink({
-        ...baseInput,
-        platform,
-        clientType
-      })
-    )
+  it('keeps mixed Codex profiles after current CC-Switch rebuilds config.toml', () => {
+    const deeplink = buildCcsImportDeeplink({
+      apiKey: 'sk-test',
+      baseUrl: 'https://bridgemind.pro/v1',
+      providerName: 'BridgeMind',
+      platform: 'mixed',
+      clientType: 'codex',
+    })
 
-    expect(params.get('app')).toBe(app)
-    expect(params.get('endpoint')).toBe(baseInput.baseUrl)
-    expect(params.has('model')).toBe(false)
+    const rebuiltConfig = simulateCurrentCcsCodexImportConfig(new URL(deeplink))
+    expect(rebuiltConfig).toContain('model_provider = "bridgemind"')
+    expect(rebuiltConfig).toContain('base_url = "https://bridgemind.pro/v1"')
+    expect(rebuiltConfig).toContain('[profiles.gpt]')
+    expect(rebuiltConfig).toContain('model = "gpt-5.5"')
+    expect(rebuiltConfig).toContain('[profiles.codex]')
+    expect(rebuiltConfig).toContain('model = "gpt-5.3-codex"')
+    expect(rebuiltConfig).toContain('[profiles.claude]')
+    expect(rebuiltConfig).toContain('model = "claude-sonnet-4-6"')
+    expect(rebuiltConfig).toContain('[profiles.gemini]')
+    expect(rebuiltConfig).toContain('model = "gemini-2.5-pro"')
+    expect(rebuiltConfig).toContain('[profiles.deepseek]')
+    expect(rebuiltConfig).toContain('model = "deepseek-v4-pro"')
   })
 
-  it('keeps Antigravity imports on the selected client endpoint without a model parameter', () => {
-    const params = paramsFromDeeplink(
-      buildCcSwitchImportDeeplink({
-        ...baseInput,
-        platform: 'antigravity',
-        clientType: 'gemini'
-      })
-    )
+  it('routes mixed DeepSeek imports to OpenCode instead of Codex responses', () => {
+    const deeplink = buildCcsImportDeeplink({
+      apiKey: 'sk-test',
+      baseUrl: 'https://bridgemind.pro/v1',
+      providerName: 'BridgeMind',
+      platform: 'mixed',
+      clientType: 'deepseek',
+    })
 
-    expect(params.get('app')).toBe('gemini')
-    expect(params.get('endpoint')).toBe(`${baseInput.baseUrl}/antigravity`)
-    expect(params.has('model')).toBe(false)
+    const url = new URL(deeplink)
+    expect(url.searchParams.get('app')).toBe('opencode')
+    expect(url.searchParams.get('model')).toBe('deepseek-v4-pro')
+    expect(url.searchParams.get('config')).toBeNull()
+    expect(url.searchParams.get('notes')).toContain('OpenAI-compatible chat')
+  })
+
+  it('keeps Antigravity client imports on the antigravity endpoint', () => {
+    const deeplink = buildCcsImportDeeplink({
+      apiKey: 'sk-test',
+      baseUrl: 'https://bridgemind.pro/v1',
+      providerName: 'BridgeMind',
+      platform: 'antigravity',
+      clientType: 'gemini',
+    })
+
+    const url = new URL(deeplink)
+    expect(url.searchParams.get('app')).toBe('gemini')
+    expect(url.searchParams.get('endpoint')).toBe('https://bridgemind.pro/v1/antigravity')
+    expect(url.searchParams.get('model')).toBe('gemini-2.5-pro')
   })
 })

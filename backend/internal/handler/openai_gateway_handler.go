@@ -46,6 +46,23 @@ func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedM
 	return strings.TrimSpace(apiKey.Group.ResolveMessagesDispatchModel(requestedModel))
 }
 
+func resolveOpenAICompatibleGatewayPlatform(apiKey *service.APIKey) string {
+	if apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == service.PlatformDeepSeek {
+		return service.PlatformDeepSeek
+	}
+	return service.PlatformOpenAI
+}
+
+func resolveOpenAICompatibleGatewayPlatformForModel(apiKey *service.APIKey, modelID string) string {
+	if apiKey != nil && apiKey.Group != nil && apiKey.Group.Platform == service.PlatformMixed {
+		if service.ResolveMixedModelPlatform(modelID) == service.PlatformDeepSeek {
+			return service.PlatformDeepSeek
+		}
+		return service.PlatformOpenAI
+	}
+	return resolveOpenAICompatibleGatewayPlatform(apiKey)
+}
+
 // NewOpenAIGatewayHandler creates a new OpenAIGatewayHandler
 func NewOpenAIGatewayHandler(
 	gatewayService *service.OpenAIGatewayService,
@@ -275,6 +292,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
 			requireCompact,
+			resolveOpenAICompatibleGatewayPlatformForModel(apiKey, reqModel),
 		)
 		if err != nil {
 			reqLog.Warn("openai.account_select_failed",
@@ -339,6 +357,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
+			if account.Platform == service.PlatformDeepSeek {
+				return h.gatewayService.ForwardDeepSeekAsResponses(c.Request.Context(), c, account, forwardBody, "")
+			}
 			return h.gatewayService.Forward(c.Request.Context(), c, account, forwardBody)
 		}()
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
@@ -613,6 +634,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 	reqModel := modelResult.String()
+	if resolveOpenAICompatibleGatewayPlatformForModel(apiKey, reqModel) == service.PlatformDeepSeek {
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "DeepSeek does not support Anthropic Messages API; use /v1/chat/completions")
+		return
+	}
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
 	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
 	reqStream := gjson.GetBytes(body, "stream").Bool()
@@ -684,6 +709,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
 			false,
+			service.PlatformOpenAI,
 		)
 		if err != nil {
 			reqLog.Warn("openai_messages.account_select_failed",
@@ -1255,6 +1281,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		nil,
 		service.OpenAIUpstreamTransportResponsesWebsocketV2,
 		false,
+		resolveOpenAICompatibleGatewayPlatformForModel(apiKey, reqModel),
 	)
 	if err != nil {
 		reqLog.Warn("openai.websocket_account_select_failed", zap.Error(err))

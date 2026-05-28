@@ -28,6 +28,10 @@ func TestNormalizeInboundEndpoint(t *testing.T) {
 		{"/v1/images/generations", EndpointImagesGenerations},
 		{"/v1/images/edits", EndpointImagesEdits},
 		{"/v1beta/models", EndpointGeminiModels},
+		{"/v4/messages", EndpointMessages},
+		{"/v4/chat/completions", EndpointChatCompletions},
+		{"/v4/responses", EndpointResponses},
+		{"/v4/responses/compact", EndpointResponses},
 
 		// Prefixed paths (antigravity, openai).
 		{"/antigravity/v1/messages", EndpointMessages},
@@ -73,12 +77,18 @@ func TestDeriveUpstreamEndpoint(t *testing.T) {
 
 		// OpenAI — always /v1/responses.
 		{"openai responses root", EndpointResponses, "/v1/responses", service.PlatformOpenAI, EndpointResponses},
+		{"openai v4 responses root", EndpointResponses, "/v4/responses", service.PlatformOpenAI, EndpointResponses},
 		{"openai responses compact", EndpointResponses, "/openai/v1/responses/compact", service.PlatformOpenAI, "/v1/responses/compact"},
+		{"openai v4 responses compact", EndpointResponses, "/v4/responses/compact", service.PlatformOpenAI, "/v1/responses/compact"},
 		{"openai responses nested", EndpointResponses, "/openai/v1/responses/compact/detail", service.PlatformOpenAI, "/v1/responses/compact/detail"},
 		{"openai from messages", EndpointMessages, "/v1/messages", service.PlatformOpenAI, EndpointResponses},
 		{"openai from completions", EndpointChatCompletions, "/v1/chat/completions", service.PlatformOpenAI, EndpointResponses},
 		{"openai image generations", EndpointImagesGenerations, "/v1/images/generations", service.PlatformOpenAI, EndpointImagesGenerations},
 		{"openai image edits", EndpointImagesEdits, "/openai/v1/images/edits", service.PlatformOpenAI, EndpointImagesEdits},
+
+		// DeepSeek — Chat Completions upstream, Responses bridge surface.
+		{"deepseek chat completions passthrough", EndpointChatCompletions, "/v1/chat/completions", service.PlatformDeepSeek, EndpointChatCompletions},
+		{"deepseek responses bridge surface", EndpointResponses, "/v1/responses", service.PlatformDeepSeek, EndpointResponses},
 
 		// Antigravity — uses inbound to pick Claude vs Gemini upstream.
 		{"antigravity claude", EndpointMessages, "/antigravity/v1/messages", service.PlatformAntigravity, EndpointMessages},

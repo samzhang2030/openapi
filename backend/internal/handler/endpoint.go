@@ -42,6 +42,12 @@ const (
 func NormalizeInboundEndpoint(path string) string {
 	path = strings.TrimSpace(path)
 	switch {
+	case strings.Contains(path, "/v4/chat/completions"):
+		return EndpointChatCompletions
+	case strings.Contains(path, "/v4/messages"):
+		return EndpointMessages
+	case strings.Contains(path, "/v4/responses"):
+		return EndpointResponses
 	case strings.Contains(path, EndpointChatCompletions):
 		return EndpointChatCompletions
 	case strings.Contains(path, EndpointMessages):
@@ -65,6 +71,7 @@ func NormalizeInboundEndpoint(path string) string {
 // Platform-specific rules:
 //   - OpenAI always forwards to /v1/responses (with optional subpath
 //     such as /v1/responses/compact preserved from the raw URL).
+//   - DeepSeek  → /v1/chat/completions (Responses is bridged by handler)
 //   - Anthropic  → /v1/messages
 //   - Gemini     → /v1beta/models
 //   - Antigravity → /v1/messages (Claude) or gemini (Gemini)
@@ -84,6 +91,12 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 			return EndpointResponses + suffix
 		}
 		return EndpointResponses
+
+	case service.PlatformDeepSeek:
+		if inbound == EndpointResponses {
+			return EndpointResponses
+		}
+		return EndpointChatCompletions
 
 	case service.PlatformAnthropic:
 		return EndpointMessages

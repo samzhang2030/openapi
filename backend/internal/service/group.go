@@ -83,6 +83,37 @@ func (g *Group) IsSubscriptionType() bool {
 	return g.SubscriptionType == SubscriptionTypeSubscription
 }
 
+// ResolveMixedModelPlatform maps a requested model ID to the concrete platform
+// used by mixed groups. Unknown OpenAI-compatible names default to OpenAI so
+// Codex/CCS imports keep working with future gpt/codex model IDs.
+func ResolveMixedModelPlatform(modelID string) string {
+	model := strings.ToLower(strings.TrimSpace(modelID))
+	switch {
+	case strings.HasPrefix(model, "deepseek-"):
+		return PlatformDeepSeek
+	case strings.HasPrefix(model, "gemini-"):
+		return PlatformGemini
+	case strings.HasPrefix(model, "claude-"):
+		return PlatformAnthropic
+	case strings.HasPrefix(model, "gpt-"),
+		strings.HasPrefix(model, "o1"),
+		strings.HasPrefix(model, "o3"),
+		strings.HasPrefix(model, "o4"),
+		strings.HasPrefix(model, "codex"),
+		strings.HasPrefix(model, "chatgpt-"):
+		return PlatformOpenAI
+	default:
+		return PlatformOpenAI
+	}
+}
+
+func ResolveGroupRuntimePlatform(groupPlatform string, requestedModel string) string {
+	if groupPlatform == PlatformMixed {
+		return ResolveMixedModelPlatform(requestedModel)
+	}
+	return groupPlatform
+}
+
 func (g *Group) HasDailyLimit() bool {
 	return g.DailyLimitUSD != nil && *g.DailyLimitUSD > 0
 }
