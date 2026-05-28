@@ -1094,3 +1094,12 @@ update:
   # Leave empty for direct connection (recommended for overseas servers)
   # 留空表示直连（适用于海外服务器）
   proxy_url: ""
+  # Optional external updater command for fork/local-image deployments.
+  # 可选：fork/本地镜像部署的一键更新脚本路径。
+  external_updater_command: ""
+  # Absolute working directory for the external updater command.
+  # 外部更新脚本的绝对运行目录，建议指向宿主机仓库根目录。
+  external_updater_working_directory: ""
+  # Max helper container runtime in seconds.
+  # helper 容器最长运行时间（秒）。
+  external_updater_helper_timeout_seconds: 1800

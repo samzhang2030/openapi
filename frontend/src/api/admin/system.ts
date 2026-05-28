@@ -19,6 +19,8 @@ export interface VersionInfo {
   cached: boolean
   warning?: string
   build_type: string // "source" for manual builds, "release" for CI builds
+  can_auto_update: boolean
+  update_hint?: string
 }
 
 /**
@@ -43,6 +45,7 @@ export async function checkUpdates(force = false): Promise<VersionInfo> {
 export interface UpdateResult {
   message: string
   need_restart: boolean
+  poll_for_restart?: boolean
 }
 
 /**

@@ -95,6 +95,10 @@ LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
+    bash \
+    git \
+    docker-cli \
+    docker-cli-compose \
     su-exec \
     libpq \
     zstd-libs \

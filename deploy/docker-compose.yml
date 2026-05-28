@@ -28,6 +28,10 @@ services:
     volumes:
       # Data persistence (config.yaml will be auto-generated here)
       - sub2api_data:/app/data
+      # Optional: enable one-click auto-update for fork/local-image deployments.
+      # Requires mounting the host repo at the SAME absolute path and exposing docker.sock.
+      # - /var/run/docker.sock:/var/run/docker.sock
+      # - /home/ubuntu/bridgemind:/home/ubuntu/bridgemind
       # Optional: Mount custom config.yaml (uncomment and create the file first)
       # Copy config.example.yaml to config.yaml, modify it, then uncomment:
       # - ./config.yaml:/app/data/config.yaml
@@ -143,6 +147,11 @@ services:
       # Proxy for accessing GitHub (online updates + pricing data)
       # Examples: http://host:port, socks5://host:port
       - UPDATE_PROXY_URL=${UPDATE_PROXY_URL:-}
+      # Optional: external updater for fork/local-image deployments.
+      # Requires docker.sock + host repo bind mount above.
+      - UPDATE_EXTERNAL_UPDATER_COMMAND=${UPDATE_EXTERNAL_UPDATER_COMMAND:-}
+      - UPDATE_EXTERNAL_UPDATER_WORKING_DIRECTORY=${UPDATE_EXTERNAL_UPDATER_WORKING_DIRECTORY:-}
+      - UPDATE_EXTERNAL_UPDATER_HELPER_TIMEOUT_SECONDS=${UPDATE_EXTERNAL_UPDATER_HELPER_TIMEOUT_SECONDS:-1800}
 
       # =======================================================================
       # Image Generation Stream & Concurrency

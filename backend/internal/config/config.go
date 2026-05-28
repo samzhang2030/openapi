@@ -154,6 +154,13 @@ type UpdateConfig struct {
 	// 支持 http/https/socks5/socks5h 协议
 	// 例如: "http://127.0.0.1:7890", "socks5://127.0.0.1:1080"
 	ProxyURL string `mapstructure:"proxy_url"`
+	// ExternalUpdaterCommand 指向宿主机仓库内的更新脚本路径。
+	// 配置后，Docker/fork 部署会通过独立 helper 容器触发该脚本。
+	ExternalUpdaterCommand string `mapstructure:"external_updater_command"`
+	// ExternalUpdaterWorkingDirectory 是更新脚本运行目录，建议指向宿主机仓库根目录。
+	ExternalUpdaterWorkingDirectory string `mapstructure:"external_updater_working_directory"`
+	// ExternalUpdaterHelperTimeoutSeconds 控制 helper 容器允许的最长更新时间。
+	ExternalUpdaterHelperTimeoutSeconds int `mapstructure:"external_updater_helper_timeout_seconds"`
 }
 
 type IdempotencyConfig struct {
