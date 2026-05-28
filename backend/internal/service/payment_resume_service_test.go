@@ -437,6 +437,7 @@ func TestNormalizeVisibleMethodSource(t *testing.T) {
 	}{
 		{name: "alipay official alias", method: payment.TypeAlipay, input: "alipay", want: VisibleMethodSourceOfficialAlipay},
 		{name: "alipay easypay alias", method: payment.TypeAlipay, input: "easypay", want: VisibleMethodSourceEasyPayAlipay},
+		{name: "alipay ldx alias", method: payment.TypeAlipay, input: "ldxpaybridge", want: VisibleMethodSourceLdxPayAlipay},
 		{name: "wxpay official alias", method: payment.TypeWxpay, input: "wxpay", want: VisibleMethodSourceOfficialWechat},
 		{name: "wxpay easypay alias", method: payment.TypeWxpay, input: "easypay", want: VisibleMethodSourceEasyPayWechat},
 		{name: "unsupported source", method: payment.TypeWxpay, input: "stripe", want: ""},
@@ -464,6 +465,7 @@ func TestVisibleMethodProviderKeyForSource(t *testing.T) {
 	}{
 		{name: "official alipay", method: payment.TypeAlipay, source: VisibleMethodSourceOfficialAlipay, want: payment.TypeAlipay, ok: true},
 		{name: "easypay alipay", method: payment.TypeAlipay, source: VisibleMethodSourceEasyPayAlipay, want: payment.TypeEasyPay, ok: true},
+		{name: "ldxpaybridge alipay", method: payment.TypeAlipay, source: VisibleMethodSourceLdxPayAlipay, want: payment.TypeLdxPayBridge, ok: true},
 		{name: "official wechat", method: payment.TypeWxpay, source: VisibleMethodSourceOfficialWechat, want: payment.TypeWxpay, ok: true},
 		{name: "easypay wechat", method: payment.TypeWxpay, source: VisibleMethodSourceEasyPayWechat, want: payment.TypeEasyPay, ok: true},
 		{name: "mismatched method and source", method: payment.TypeAlipay, source: VisibleMethodSourceOfficialWechat, want: "", ok: false},
@@ -546,6 +548,16 @@ func TestVisibleMethodLoadBalancerUsesConfiguredSourceWhenMultipleProvidersEnabl
 			wantProvider:  payment.TypeEasyPay,
 		},
 		{
+			name:          "alipay uses ldxpaybridge source",
+			method:        payment.TypeAlipay,
+			officialName:  "Official Alipay",
+			officialTypes: "alipay",
+			easyPayName:   "LDX Pay Bridge",
+			easyPayTypes:  "alipay",
+			sourceSetting: VisibleMethodSourceLdxPayAlipay,
+			wantProvider:  payment.TypeLdxPayBridge,
+		},
+		{
 			name:          "wxpay uses official source",
 			method:        payment.TypeWxpay,
 			officialName:  "Official WeChat",
@@ -591,8 +603,13 @@ func TestVisibleMethodLoadBalancerUsesConfiguredSourceWhenMultipleProvidersEnabl
 				t.Fatalf("create official provider: %v", err)
 			}
 
+			alternateProviderKey := payment.TypeEasyPay
+			if tt.wantProvider == payment.TypeLdxPayBridge {
+				alternateProviderKey = payment.TypeLdxPayBridge
+			}
+
 			_, err = client.PaymentProviderInstance.Create().
-				SetProviderKey(payment.TypeEasyPay).
+				SetProviderKey(alternateProviderKey).
 				SetName(tt.easyPayName).
 				SetConfig("{}").
 				SetSupportedTypes(tt.easyPayTypes).

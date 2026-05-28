@@ -42,6 +42,7 @@ export type PaymentVisibleMethodSource =
   | ""
   | "official_alipay"
   | "easypay_alipay"
+  | "ldxpaybridge_alipay"
   | "official_wxpay"
   | "easypay_wxpay";
 export type WeChatConnectMode = "open" | "mp" | "mobile";
@@ -85,6 +86,11 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_OPTIONS: Record<
       labelZh: "易支付支付宝",
       labelEn: "EasyPay Alipay",
     },
+    {
+      value: "ldxpaybridge_alipay",
+      labelZh: "LDX 支付宝",
+      labelEn: "LDX Alipay",
+    },
   ],
   wxpay: [
     { value: "", labelZh: "未配置", labelEn: "Not configured" },
@@ -111,6 +117,10 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_ALIASES: Record<
     official: "official_alipay",
     easypay_alipay: "easypay_alipay",
     easypay: "easypay_alipay",
+    ldxpaybridge_alipay: "ldxpaybridge_alipay",
+    ldxpaybridge: "ldxpaybridge_alipay",
+    ldxpay: "ldxpaybridge_alipay",
+    ldx: "ldxpaybridge_alipay",
   },
   wxpay: {
     official_wxpay: "official_wxpay",

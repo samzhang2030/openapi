@@ -125,6 +125,7 @@ import { useAdminSettingsStore } from '@/stores/adminSettings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { buildEmbeddedUrl, detectTheme } from '@/utils/embedded-url'
+import { resolveRechargeAuthToken } from '@/utils/recharge-auth'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -150,6 +151,12 @@ const activeHeadingId = ref('')
 let themeObserver: MutationObserver | null = null
 
 const menuItemId = computed(() => route.params.id as string)
+const embeddedAuthToken = computed(() =>
+  resolveRechargeAuthToken(
+    typeof route.query.token === 'string' ? route.query.token : '',
+    authStore.token,
+  ),
+)
 
 const menuItem = computed(() => {
   const id = menuItemId.value
@@ -177,7 +184,7 @@ const embeddedUrl = computed(() => {
   return buildEmbeddedUrl(
     menuItem.value.url,
     authStore.user?.id,
-    authStore.token,
+    embeddedAuthToken.value,
     pageTheme.value,
     locale.value,
   )

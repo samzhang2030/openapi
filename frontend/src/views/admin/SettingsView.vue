@@ -6573,6 +6573,7 @@ import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiErro
 import { useAppStore } from "@/stores";
 import { useAdminSettingsStore } from "@/stores/adminSettings";
 import { normalizeVisibleMethod } from "@/components/payment/paymentFlow";
+import { PROVIDER_ENABLED_TYPE_KEYS } from "@/components/payment/providerConfig";
 import {
   isRegistrationEmailSuffixDomainValid,
   normalizeRegistrationEmailSuffixDomain,
@@ -8803,6 +8804,7 @@ const providerDialogRef = ref<InstanceType<
 const providerKeyOptions = computed(() => [
   { value: "easypay", label: t("admin.settings.payment.providerEasypay") },
   { value: "alipay", label: t("admin.settings.payment.providerAlipay") },
+  { value: "ldxpaybridge", label: t("admin.settings.payment.providerLdxPayBridge") },
   { value: "wxpay", label: t("admin.settings.payment.providerWxpay") },
   { value: "stripe", label: t("admin.settings.payment.providerStripe") },
   { value: "airwallex", label: t("admin.settings.payment.providerAirwallex") },
@@ -8810,7 +8812,11 @@ const providerKeyOptions = computed(() => [
 
 const enabledProviderKeyOptions = computed(() => {
   const enabled = form.payment_enabled_types;
-  return providerKeyOptions.value.filter((opt) => enabled.includes(opt.value));
+  return providerKeyOptions.value.filter((opt) =>
+    (PROVIDER_ENABLED_TYPE_KEYS[opt.value] || [opt.value]).some((key) =>
+      enabled.includes(key),
+    ),
+  );
 });
 
 const loadBalanceOptions = computed(() => [

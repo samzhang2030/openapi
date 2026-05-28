@@ -34,6 +34,17 @@ func enabledVisibleMethodsForProvider(providerKey, supportedTypes string) []stri
 				break
 			}
 		}
+	case payment.TypeLdxPayBridge:
+		if strings.TrimSpace(supportedTypes) == "" {
+			addMethod(payment.TypeAlipay)
+			break
+		}
+		for _, supportedType := range splitTypes(supportedTypes) {
+			if NormalizeVisibleMethod(supportedType) == payment.TypeAlipay {
+				addMethod(payment.TypeAlipay)
+				break
+			}
+		}
 	case payment.TypeWxpay:
 		if strings.TrimSpace(supportedTypes) == "" {
 			addMethod(payment.TypeWxpay)

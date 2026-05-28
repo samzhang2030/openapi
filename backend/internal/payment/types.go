@@ -18,6 +18,7 @@ const (
 	TypeLink         PaymentType = "link"
 	TypeEasyPay      PaymentType = "easypay"
 	TypeAirwallex    PaymentType = "airwallex"
+	TypeLdxPayBridge PaymentType = "ldxpaybridge"
 )
 
 // Order status constants shared across payment and service layers.
@@ -108,6 +109,9 @@ type CreatePaymentRequest struct {
 	ClientIP           string // Payer's IP address
 	IsMobile           bool   // Whether the request comes from a mobile device
 	InstanceSubMethods string // Comma-separated sub-methods from instance supported_types (for Stripe)
+	OrderType          string // balance | subscription
+	PlanID             int64  // Subscription plan ID when OrderType=subscription
+	Contact            string // User email/contact forwarded to upstream providers when required
 }
 
 // CreatePaymentResultType describes the shape of the create-payment result.

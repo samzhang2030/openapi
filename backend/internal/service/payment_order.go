@@ -303,6 +303,11 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 		}
 		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
 	}
+	if providerKey == payment.TypeLdxPayBridge {
+		if shopToken := strings.TrimSpace(sel.Config["shopToken"]); shopToken != "" {
+			snapshot["shop_token"] = shopToken
+		}
+	}
 
 	if len(snapshot) == 1 {
 		return nil
@@ -437,13 +442,8 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	if err != nil {
 		return nil, err
 	}
-	providerReq := buildProviderCreatePaymentRequest(CreateOrderRequest{
-		PaymentType: req.PaymentType,
-		OpenID:      req.OpenID,
-		ClientIP:    req.ClientIP,
-		IsMobile:    req.IsMobile,
-		ReturnURL:   providerReturnURL,
-	}, sel, outTradeNo, payAmountStr, subject)
+	providerReq := buildProviderCreatePaymentRequest(req, order, sel, outTradeNo, payAmountStr, subject)
+	providerReq.ReturnURL = providerReturnURL
 	pr, err := prov.CreatePayment(ctx, providerReq)
 	if err != nil {
 		slog.Error("[PaymentService] CreatePayment failed", "provider", sel.ProviderKey, "instance", sel.InstanceID, "error", err)
@@ -479,7 +479,14 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	return resp, nil
 }
 
-func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.InstanceSelection, orderID, amount, subject string) payment.CreatePaymentRequest {
+func buildProviderCreatePaymentRequest(req CreateOrderRequest, order *dbent.PaymentOrder, sel *payment.InstanceSelection, orderID, amount, subject string) payment.CreatePaymentRequest {
+	contact := ""
+	if order != nil {
+		contact = strings.TrimSpace(order.UserEmail)
+		if contact == "" {
+			contact = strings.TrimSpace(order.UserName)
+		}
+	}
 	return payment.CreatePaymentRequest{
 		OrderID:            orderID,
 		Amount:             amount,
@@ -490,6 +497,9 @@ func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.Inst
 		ClientIP:           req.ClientIP,
 		IsMobile:           req.IsMobile,
 		InstanceSubMethods: selectedInstanceSupportedTypes(sel),
+		OrderType:          req.OrderType,
+		PlanID:             req.PlanID,
+		Contact:            contact,
 	}
 }
 
@@ -662,6 +672,17 @@ func (s *PaymentService) getWeChatPaymentOAuthCredential(ctx context.Context) (s
 func classifyCreatePaymentError(req CreateOrderRequest, providerKey string, err error) error {
 	if err == nil {
 		return nil
+	}
+	var verificationErr *provider.LdxVerificationRequiredError
+	if errors.As(err, &verificationErr) {
+		return infraerrors.ServiceUnavailable(
+			"PAYMENT_GATEWAY_VERIFICATION_REQUIRED",
+			"payment gateway requires interactive verification",
+		).WithMetadata(map[string]string{
+			"provider": providerKey,
+			"path":     verificationErr.Path,
+			"trace_id": verificationErr.TraceID,
+		})
 	}
 	if providerKey == payment.TypeWxpay &&
 		payment.GetBasePaymentType(req.PaymentType) == payment.TypeWxpay &&

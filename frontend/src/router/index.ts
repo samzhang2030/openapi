@@ -10,6 +10,7 @@ import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
+import { canUseEmbeddedRechargeAccess } from '@/utils/recharge-auth'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveDisabledPublicFeatureRedirect, routeNeedsPublicSettings } from './publicFeatureGuard'
 import { resolveDocumentTitle } from './title'
@@ -279,6 +280,17 @@ const routes: RouteRecordRaw[] = [
       title: 'My Subscriptions',
       titleKey: 'userSubscriptions.title',
       descriptionKey: 'userSubscriptions.description'
+    }
+  },
+  {
+    path: '/recharge-center',
+    name: 'RechargeCenter',
+    component: () => import('@/views/user/RechargeCenterView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Recharge Center',
+      titleKey: 'rechargeCenter.title'
     }
   },
   {
@@ -772,6 +784,15 @@ router.beforeEach(async (to, _from, next) => {
   // Check if route requires authentication
   const requiresAuth = to.meta.requiresAuth !== false // Default to true
   const requiresAdmin = to.meta.requiresAdmin === true
+  const embeddedRouteAccessAllowed = canUseEmbeddedRechargeAccess(
+    to.path,
+    typeof to.query.token === 'string' ? to.query.token : '',
+  )
+
+  if (embeddedRouteAccessAllowed) {
+    next()
+    return
+  }
 
   if (to.path === '/setup') {
     try {

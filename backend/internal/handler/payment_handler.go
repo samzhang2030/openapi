@@ -1,13 +1,16 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -115,6 +118,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 	// Fetch plans with group info
 	plans, _ := h.configService.ListPlansForSale(ctx)
 	groupInfo := h.configService.GetGroupInfoMap(ctx, plans)
+	ldxPlanGoodsMap := h.configService.GetLdxPayBridgePlanGoodsMap(ctx)
 	planList := make([]checkoutPlan, 0, len(plans))
 	for _, p := range plans {
 		gi := groupInfo[p.GroupID]
@@ -126,7 +130,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 			ModelScopes: gi.ModelScopes,
 			Name:        p.Name, Description: p.Description, Price: p.Price, OriginalPrice: p.OriginalPrice,
 			ValidityDays: p.ValidityDays, ValidityUnit: p.ValidityUnit, Features: parseFeatures(p.Features),
-			ProductName: p.ProductName,
+			ProductName: p.ProductName, ExternalGoodsKey: strings.TrimSpace(ldxPlanGoodsMap[int64(p.ID)]),
 		})
 	}
 
@@ -160,23 +164,24 @@ type checkoutInfoResponse struct {
 }
 
 type checkoutPlan struct {
-	ID              int64    `json:"id"`
-	GroupID         int64    `json:"group_id"`
-	GroupPlatform   string   `json:"group_platform"`
-	GroupName       string   `json:"group_name"`
-	RateMultiplier  float64  `json:"rate_multiplier"`
-	DailyLimitUSD   *float64 `json:"daily_limit_usd"`
-	WeeklyLimitUSD  *float64 `json:"weekly_limit_usd"`
-	MonthlyLimitUSD *float64 `json:"monthly_limit_usd"`
-	ModelScopes     []string `json:"supported_model_scopes"`
-	Name            string   `json:"name"`
-	Description     string   `json:"description"`
-	Price           float64  `json:"price"`
-	OriginalPrice   *float64 `json:"original_price,omitempty"`
-	ValidityDays    int      `json:"validity_days"`
-	ValidityUnit    string   `json:"validity_unit"`
-	Features        []string `json:"features"`
-	ProductName     string   `json:"product_name"`
+	ID               int64    `json:"id"`
+	GroupID          int64    `json:"group_id"`
+	GroupPlatform    string   `json:"group_platform"`
+	GroupName        string   `json:"group_name"`
+	RateMultiplier   float64  `json:"rate_multiplier"`
+	DailyLimitUSD    *float64 `json:"daily_limit_usd"`
+	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd"`
+	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
+	ModelScopes      []string `json:"supported_model_scopes"`
+	Name             string   `json:"name"`
+	Description      string   `json:"description"`
+	Price            float64  `json:"price"`
+	OriginalPrice    *float64 `json:"original_price,omitempty"`
+	ValidityDays     int      `json:"validity_days"`
+	ValidityUnit     string   `json:"validity_unit"`
+	Features         []string `json:"features"`
+	ProductName      string   `json:"product_name"`
+	ExternalGoodsKey string   `json:"external_goods_key,omitempty"`
 }
 
 // parseFeatures splits a newline-separated features string into a string slice.
@@ -205,6 +210,77 @@ func (h *PaymentHandler) GetLimits(c *gin.Context) {
 		return
 	}
 	response.Success(c, resp)
+}
+
+var rechargeShopActionPaths = map[string]string{
+	"info":       "/shopApi/Shop/info",
+	"channels":   "/shopApi/Shop/getUserChannel",
+	"categories": "/shopApi/Shop/categoryList",
+	"goods":      "/shopApi/Shop/goodsList",
+	"price":      "/shopApi/Shop/getGoodsPrice",
+	"order":      "/shopApi/Pay/order",
+}
+
+// ProxyRechargeShop proxies the pay.ldxp.cn storefront APIs through the backend
+// because direct browser requests are blocked upstream with HTTP 403.
+// POST /api/v1/payment/recharge-shop/:action
+func (h *PaymentHandler) ProxyRechargeShop(c *gin.Context) {
+	path, ok := rechargeShopActionPaths[strings.TrimSpace(c.Param("action"))]
+	if !ok {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_RECHARGE_SHOP_ACTION", "unsupported recharge shop action"))
+		return
+	}
+
+	cfg := h.configService.GetLdxPayBridgeConfig(c.Request.Context())
+	if len(cfg) == 0 {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("RECHARGE_SHOP_PROXY_UNAVAILABLE", "recharge shop proxy is not configured"))
+		return
+	}
+
+	client, err := provider.NewLdxStorefrontClient(cfg)
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("RECHARGE_SHOP_PROXY_UNAVAILABLE", err.Error()))
+		return
+	}
+
+	payload := make(map[string]any)
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			response.BadRequest(c, "Invalid request: "+err.Error())
+			return
+		}
+	}
+	if payload == nil {
+		payload = make(map[string]any)
+	}
+
+	switch path {
+	case "/shopApi/Shop/info", "/shopApi/Shop/getUserChannel", "/shopApi/Shop/categoryList", "/shopApi/Shop/goodsList":
+		if token, _ := payload["token"].(string); strings.TrimSpace(token) == "" {
+			payload["token"] = client.ShopToken()
+		}
+	}
+
+	body, err := client.PostJSONRaw(c.Request.Context(), path, payload)
+	if err != nil {
+		var verificationErr *provider.LdxVerificationRequiredError
+		if errors.As(err, &verificationErr) {
+			response.ErrorFrom(c, infraerrors.ServiceUnavailable(
+				"RECHARGE_SHOP_VERIFICATION_REQUIRED",
+				"recharge shop upstream requires interactive verification",
+			).WithMetadata(map[string]string{
+				"path":     verificationErr.Path,
+				"trace_id": verificationErr.TraceID,
+			}))
+			return
+		}
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("RECHARGE_SHOP_PROXY_ERROR", err.Error()))
+		return
+	}
+
+	c.Status(http.StatusOK)
+	c.Header("Content-Type", "application/json; charset=utf-8")
+	_, _ = c.Writer.Write(body)
 }
 
 // CreateOrderRequest is the request body for creating a payment order.

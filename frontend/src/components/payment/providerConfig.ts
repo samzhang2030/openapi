@@ -33,8 +33,19 @@ export interface CallbackPaths {
 export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   easypay: ['alipay', 'wxpay'],
   alipay: ['alipay'],
+  ldxpaybridge: ['alipay'],
   wxpay: ['wxpay'],
   stripe: ['card', 'alipay', 'wxpay', 'link'],
+  airwallex: ['airwallex'],
+}
+
+/** Maps provider key to the enabled payment-type toggles that allow creating it. */
+export const PROVIDER_ENABLED_TYPE_KEYS: Record<string, string[]> = {
+  easypay: ['easypay', 'alipay', 'wxpay'],
+  alipay: ['alipay'],
+  ldxpaybridge: ['alipay'],
+  wxpay: ['wxpay'],
+  stripe: ['stripe'],
   airwallex: ['airwallex'],
 }
 
@@ -122,6 +133,12 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'appId', label: 'App ID', sensitive: false },
     { key: 'privateKey', label: '', sensitive: true },
     { key: 'publicKey', label: '', sensitive: true },
+  ],
+  ldxpaybridge: [
+    { key: 'shopToken', label: '', sensitive: false },
+    { key: 'planGoodsMap', label: '', sensitive: false },
+    { key: 'defaultChannelId', label: '', sensitive: false, optional: true },
+    { key: 'apiBase', label: '', sensitive: false, defaultValue: 'https://pay.ldxp.cn' },
   ],
   wxpay: [
     { key: 'appId', label: 'App ID', sensitive: false },

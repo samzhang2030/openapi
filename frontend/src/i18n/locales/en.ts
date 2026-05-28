@@ -5750,6 +5750,7 @@ export default {
         helpTextPlaceholder: 'Enter help text...',
         providerEasypay: 'EasyPay',
         providerAlipay: 'Alipay (Direct)',
+        providerLdxPayBridge: 'LDX Pay Bridge',
         providerWxpay: 'WeChat Pay (Direct)',
         providerStripe: 'Stripe',
         providerAirwallex: 'Airwallex',
@@ -5786,6 +5787,9 @@ export default {
         field_countryCode: 'Country/region code',
         field_currency: 'Payment currency',
         field_accountId: 'Airwallex Account ID',
+        field_shopToken: 'LDX Shop Token',
+        field_planGoodsMap: 'Plan Goods Map',
+        field_defaultChannelId: 'Default Channel ID',
         field_airwallexApiBaseHint: 'Must match the API key environment: use https://api-demo.airwallex.com/api/v1 for sandbox/demo keys, and https://api.airwallex.com/api/v1 for production keys. Mixed environments return credentials_invalid / Access Denied.',
         field_paymentCurrencyHint: 'Default is CNY. Stripe and Airwallex can choose HKD, USD, or another listed currency supported by the account; WeChat Pay, Alipay, and EasyPay remain CNY.',
         field_accountIdHint: 'Leave this empty unless you use multiple accounts, an organization-level key, or connected-account payments. A single-account scoped API key uses the selected account by default.',
@@ -6481,6 +6485,10 @@ export default {
     notConfiguredDesc: 'The URL for this custom page has not been properly configured.',
   },
 
+  rechargeCenter: {
+    title: 'Recharge Center',
+  },
+
   // Announcements Page
   announcements: {
     title: 'Announcements',
@@ -6698,6 +6706,7 @@ export default {
       wxpay: 'WeChat Pay',
       stripe: 'Stripe',
       airwallex: 'Airwallex',
+      ldxpaybridge: 'LDX Pay Bridge',
       card: 'Card',
       link: 'Link',
       alipay_direct: 'Alipay (Direct)',

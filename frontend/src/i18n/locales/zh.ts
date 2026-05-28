@@ -5903,6 +5903,7 @@ export default {
         helpTextPlaceholder: '输入帮助说明文本...',
         providerEasypay: '易支付',
         providerAlipay: '支付宝官方',
+        providerLdxPayBridge: 'LDX 支付桥',
         providerWxpay: '微信官方',
         providerStripe: 'Stripe',
         providerAirwallex: 'Airwallex',
@@ -5939,6 +5940,9 @@ export default {
         field_countryCode: '国家/地区代码',
         field_currency: '支付币种',
         field_accountId: 'Airwallex 账户 ID',
+        field_shopToken: 'LDX 店铺 Token',
+        field_planGoodsMap: '套餐商品映射',
+        field_defaultChannelId: '默认渠道 ID',
         field_airwallexApiBaseHint: '必须和 API Key 所属环境一致：沙箱/测试密钥使用 https://api-demo.airwallex.com/api/v1，生产密钥使用 https://api.airwallex.com/api/v1。环境混用会返回 credentials_invalid / Access Denied。',
         field_paymentCurrencyHint: '默认 CNY。Stripe 和 Airwallex 可按账户支持从下拉项选择 HKD、USD 等币种；微信、支付宝、易支付仍按 CNY。',
         field_accountIdHint: '不涉及多账户、组织级密钥或连接账户收款时可以不填；单账户 Scoped API Key 会默认使用所选账户。',
@@ -6631,6 +6635,10 @@ export default {
     notConfiguredDesc: '该自定义页面的 URL 未正确配置。',
   },
 
+  rechargeCenter: {
+    title: '充值中心',
+  },
+
   // Announcements Page
   announcements: {
     title: '公告',
@@ -6874,6 +6882,7 @@ export default {
       wxpay: '微信支付',
       stripe: 'Stripe',
       airwallex: 'Airwallex',
+      ldxpaybridge: 'LDX 支付桥',
       card: '银行卡',
       link: 'Link',
       alipay_direct: '支付宝（直连）',

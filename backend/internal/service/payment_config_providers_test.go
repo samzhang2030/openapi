@@ -52,6 +52,13 @@ func TestValidateProviderRequest(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name:           "valid ldxpaybridge provider",
+			providerKey:    payment.TypeLdxPayBridge,
+			providerName:   "LDX Pay Bridge",
+			supportedTypes: payment.TypeAlipay,
+			wantErr:        false,
+		},
+		{
 			name:           "valid alipay provider",
 			providerKey:    "alipay",
 			providerName:   "Alipay Direct",
@@ -157,6 +164,11 @@ func TestIsSensitiveProviderConfigField(t *testing.T) {
 		{payment.TypeAirwallex, "apiBase", false},
 		{payment.TypeAirwallex, "accountId", false},
 		{payment.TypeAirwallex, "currency", false},
+
+		// LDX Pay Bridge
+		{payment.TypeLdxPayBridge, "shopToken", false},
+		{payment.TypeLdxPayBridge, "planGoodsMap", false},
+		{payment.TypeLdxPayBridge, "defaultChannelId", false},
 
 		// Unknown provider: never sensitive
 		{"unknown", "secretKey", false},
