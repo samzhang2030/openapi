@@ -731,6 +731,9 @@ func (a *Account) GetBaseURL() string {
 	if baseURL == "" {
 		return "https://api.anthropic.com"
 	}
+	if a.Platform == PlatformAnthropic {
+		return normalizeRightCodesAnthropicRelayBaseURL(baseURL)
+	}
 	if a.Platform == PlatformAntigravity {
 		return strings.TrimRight(baseURL, "/") + "/antigravity"
 	}
@@ -1361,6 +1364,21 @@ func isRightCodesAnthropicRelayBaseURL(baseURL string) bool {
 	}
 	host := strings.ToLower(parsed.Hostname())
 	return host == "right.codes" || host == "www.right.codes" || strings.HasSuffix(host, ".right.codes")
+}
+
+func normalizeRightCodesAnthropicRelayBaseURL(baseURL string) string {
+	trimmed := strings.TrimSpace(baseURL)
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed == nil {
+		return baseURL
+	}
+	if !isRightCodesAnthropicRelayBaseURL(trimmed) {
+		return baseURL
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return baseURL
+	}
+	return strings.TrimRight(parsed.Scheme+"://"+parsed.Host, "/")
 }
 
 // WebSearch 模拟三态常量

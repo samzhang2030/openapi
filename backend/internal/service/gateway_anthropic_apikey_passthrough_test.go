@@ -657,6 +657,35 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_BuildRequestRejectsInvalidBas
 	require.Error(t, err)
 }
 
+func TestGatewayService_AnthropicAPIKeyPassthrough_RightCodesPageURLUsesRelayRoot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	svc := &GatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{
+					Enabled: false,
+				},
+			},
+		},
+	}
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "k",
+			"base_url": "https://www.right.codes/api-keys?tab=keys",
+		},
+	}
+
+	req, err := svc.buildUpstreamRequestAnthropicAPIKeyPassthrough(context.Background(), c, account, []byte(`{}`), "k")
+	require.NoError(t, err)
+	require.Equal(t, "https://www.right.codes/v1/messages?beta=true", req.URL.String())
+}
+
 func TestGatewayService_AnthropicOAuth_NotAffectedByAPIKeyPassthroughToggle(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

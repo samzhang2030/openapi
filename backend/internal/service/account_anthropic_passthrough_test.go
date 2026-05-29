@@ -85,3 +85,28 @@ func TestAccount_IsAnthropicAPIKeyPassthroughEnabled(t *testing.T) {
 		require.False(t, account.IsAnthropicAPIKeyPassthroughEnabled())
 	})
 }
+
+func TestAccount_RightCodesBaseURLNormalization(t *testing.T) {
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"base_url": "https://www.right.codes/api-keys?tab=keys",
+		},
+	}
+
+	require.Equal(t, "https://www.right.codes", account.GetBaseURL())
+	require.True(t, account.IsAnthropicAPIKeyPassthroughEnabled())
+}
+
+func TestAccount_NonRightCodesBaseURLKeepsPath(t *testing.T) {
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"base_url": "https://relay.example.com/custom-prefix",
+		},
+	}
+
+	require.Equal(t, "https://relay.example.com/custom-prefix", account.GetBaseURL())
+}
