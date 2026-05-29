@@ -27,6 +27,7 @@ COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # Copy frontend source and build
+ENV NODE_OPTIONS=--max-old-space-size=2048
 COPY frontend/ ./
 RUN pnpm run build
 
