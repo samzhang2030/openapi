@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	dbaccount "github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -643,6 +644,42 @@ func (s *AccountRepoSuite) TestSetSchedulable() {
 	s.Require().Equal(account.ID, cacheRecorder.setAccounts[0].ID)
 }
 
+func (s *AccountRepoSuite) TestSetSchedulableTrueDisablesAutoPauseForExpiredAccount() {
+	past := time.Now().Add(-1 * time.Hour)
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-expired-manual-enable"})
+	_, err := s.client.Account.UpdateOneID(account.ID).
+		SetSchedulable(false).
+		SetExpiresAt(past).
+		SetAutoPauseOnExpired(true).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.repo.SetSchedulable(s.ctx, account.ID, true))
+
+	got, err := s.repo.GetByID(s.ctx, account.ID)
+	s.Require().NoError(err)
+	s.Require().True(got.Schedulable)
+	s.Require().False(got.AutoPauseOnExpired, "manual enable must not be reverted by the expiry worker")
+}
+
+func (s *AccountRepoSuite) TestSetSchedulableTrueKeepsAutoPauseForUnexpiredAccount() {
+	future := time.Now().Add(1 * time.Hour)
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-unexpired-manual-enable"})
+	_, err := s.client.Account.UpdateOneID(account.ID).
+		SetSchedulable(false).
+		SetExpiresAt(future).
+		SetAutoPauseOnExpired(true).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.repo.SetSchedulable(s.ctx, account.ID, true))
+
+	got, err := s.repo.GetByID(s.ctx, account.ID)
+	s.Require().NoError(err)
+	s.Require().True(got.Schedulable)
+	s.Require().True(got.AutoPauseOnExpired)
+}
+
 func (s *AccountRepoSuite) TestBulkUpdate_SyncSchedulerSnapshotOnDisabled() {
 	account1 := mustCreateAccount(s.T(), s.client, &service.Account{Name: "bulk-1", Status: service.StatusActive, Schedulable: true})
 	account2 := mustCreateAccount(s.T(), s.client, &service.Account{Name: "bulk-2", Status: service.StatusActive, Schedulable: true})
@@ -763,10 +800,23 @@ func (s *AccountRepoSuite) TestSetError() {
 	s.Require().NoError(err)
 	s.Require().Equal(service.StatusError, got.Status)
 	s.Require().Equal("something went wrong", got.ErrorMessage)
+	s.Require().True(got.Schedulable, "SetError must not leave a recovered account manually paused")
+}
+
+func (s *AccountRepoSuite) TestSetErrorPreservesManualUnschedulable() {
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-err-paused", Status: service.StatusActive})
+	_, err := s.client.Account.UpdateOneID(account.ID).SetSchedulable(false).Save(s.ctx)
+	s.Require().NoError(err)
+
+	s.Require().NoError(s.repo.SetError(s.ctx, account.ID, "still paused"))
+
+	got, err := s.repo.GetByID(s.ctx, account.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(service.StatusError, got.Status)
 	s.Require().False(got.Schedulable)
 }
 
-func (s *AccountRepoSuite) TestUpdateErrorStatusUnschedulesAccount() {
+func (s *AccountRepoSuite) TestUpdateErrorStatusPreservesSchedulableFlag() {
 	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-update-err", Status: service.StatusActive, Schedulable: true})
 	account.Status = service.StatusError
 	account.ErrorMessage = "token revoked"
@@ -778,7 +828,7 @@ func (s *AccountRepoSuite) TestUpdateErrorStatusUnschedulesAccount() {
 	s.Require().NoError(err)
 	s.Require().Equal(service.StatusError, got.Status)
 	s.Require().Equal("token revoked", got.ErrorMessage)
-	s.Require().False(got.Schedulable)
+	s.Require().True(got.Schedulable, "error status alone should exclude scheduling without changing the manual scheduling flag")
 }
 
 func (s *AccountRepoSuite) TestClearError_SyncSchedulerSnapshotOnRecovery() {
@@ -980,6 +1030,39 @@ func (s *AccountRepoSuite) TestBulkUpdate() {
 	got2, _ := s.repo.GetByID(s.ctx, a2.ID)
 	s.Require().Equal(99, got1.Priority)
 	s.Require().Equal(99, got2.Priority)
+}
+
+func (s *AccountRepoSuite) TestBulkUpdateSchedulableTrueDisablesAutoPauseForExpiredAccounts() {
+	past := time.Now().Add(-1 * time.Hour)
+	future := time.Now().Add(1 * time.Hour)
+	expired := mustCreateAccount(s.T(), s.client, &service.Account{Name: "bulk-expired"})
+	unexpired := mustCreateAccount(s.T(), s.client, &service.Account{Name: "bulk-unexpired"})
+	_, err := s.client.Account.Update().
+		Where(dbaccount.IDIn(expired.ID, unexpired.ID)).
+		SetSchedulable(false).
+		SetAutoPauseOnExpired(true).
+		Save(s.ctx)
+	s.Require().NoError(err)
+	_, err = s.client.Account.UpdateOneID(expired.ID).SetExpiresAt(past).Save(s.ctx)
+	s.Require().NoError(err)
+	_, err = s.client.Account.UpdateOneID(unexpired.ID).SetExpiresAt(future).Save(s.ctx)
+	s.Require().NoError(err)
+
+	enable := true
+	affected, err := s.repo.BulkUpdate(s.ctx, []int64{expired.ID, unexpired.ID}, service.AccountBulkUpdate{
+		Schedulable: &enable,
+	})
+	s.Require().NoError(err)
+	s.Require().Equal(int64(2), affected)
+
+	gotExpired, err := s.repo.GetByID(s.ctx, expired.ID)
+	s.Require().NoError(err)
+	gotUnexpired, err := s.repo.GetByID(s.ctx, unexpired.ID)
+	s.Require().NoError(err)
+	s.Require().True(gotExpired.Schedulable)
+	s.Require().False(gotExpired.AutoPauseOnExpired)
+	s.Require().True(gotUnexpired.Schedulable)
+	s.Require().True(gotUnexpired.AutoPauseOnExpired)
 }
 
 func (s *AccountRepoSuite) TestBulkUpdate_MergeCredentials() {

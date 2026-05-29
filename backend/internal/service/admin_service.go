@@ -2822,6 +2822,12 @@ func (s *adminServiceImpl) RefreshAccountCredentials(ctx context.Context, id int
 }
 
 func (s *adminServiceImpl) ClearAccountError(ctx context.Context, id int64) (*Account, error) {
+	account, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	wasErrorUnschedulable := account != nil && account.Status == StatusError && !account.Schedulable
+
 	if err := s.accountRepo.ClearError(ctx, id); err != nil {
 		return nil, err
 	}
@@ -2839,6 +2845,11 @@ func (s *adminServiceImpl) ClearAccountError(ctx context.Context, id int64) (*Ac
 	}
 	if s.runtimeBlocker != nil {
 		s.runtimeBlocker.ClearAccountSchedulingBlock(id)
+	}
+	if wasErrorUnschedulable {
+		if err := s.accountRepo.SetSchedulable(ctx, id, true); err != nil {
+			return nil, err
+		}
 	}
 	return s.accountRepo.GetByID(ctx, id)
 }

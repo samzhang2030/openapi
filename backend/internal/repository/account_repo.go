@@ -317,10 +317,6 @@ func (r *accountRepository) Update(ctx context.Context, account *service.Account
 	if account == nil {
 		return nil
 	}
-	schedulable := account.Schedulable
-	if account.Status == service.StatusError {
-		schedulable = false
-	}
 
 	builder := r.client.Account.UpdateOneID(account.ID).
 		SetName(account.Name).
@@ -333,7 +329,7 @@ func (r *accountRepository) Update(ctx context.Context, account *service.Account
 		SetPriority(account.Priority).
 		SetStatus(account.Status).
 		SetErrorMessage(account.ErrorMessage).
-		SetSchedulable(schedulable).
+		SetSchedulable(account.Schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
 
 	if account.RateMultiplier != nil {
@@ -721,7 +717,6 @@ func (r *accountRepository) SetError(ctx context.Context, id int64, errorMsg str
 		Where(dbaccount.IDEQ(id)).
 		SetStatus(service.StatusError).
 		SetErrorMessage(errorMsg).
-		SetSchedulable(false).
 		Save(ctx)
 	if err != nil {
 		return err
@@ -1265,10 +1260,17 @@ func (r *accountRepository) UpdateSessionWindow(ctx context.Context, id int64, s
 }
 
 func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedulable bool) error {
-	_, err := r.client.Account.Update().
-		Where(dbaccount.IDEQ(id)).
-		SetSchedulable(schedulable).
-		Save(ctx)
+	_, err := r.sql.ExecContext(ctx, `
+		UPDATE accounts
+		SET schedulable = $1,
+			auto_pause_on_expired = CASE
+				WHEN $1 = TRUE AND expires_at IS NOT NULL AND expires_at <= NOW() THEN FALSE
+				ELSE auto_pause_on_expired
+			END,
+			updated_at = NOW()
+		WHERE id = $2
+			AND deleted_at IS NULL
+	`, schedulable, id)
 	if err != nil {
 		return err
 	}
@@ -1435,6 +1437,12 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		setClauses = append(setClauses, "schedulable = $"+itoa(idx))
 		args = append(args, *updates.Schedulable)
 		idx++
+		if *updates.Schedulable {
+			setClauses = append(setClauses, `auto_pause_on_expired = CASE
+				WHEN expires_at IS NOT NULL AND expires_at <= NOW() THEN FALSE
+				ELSE auto_pause_on_expired
+			END`)
+		}
 	}
 	// JSONB 需要合并而非覆盖，使用 raw SQL 保持旧行为。
 	if len(updates.Credentials) > 0 {
