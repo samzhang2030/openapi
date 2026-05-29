@@ -179,12 +179,12 @@ func (s *TLSFingerprintProfileService) ResolveTLSProfile(account *Account) *tlsf
 		return nil
 	}
 	id := account.GetTLSFingerprintProfileID()
-	if id > 0 {
+	if s != nil && id > 0 {
 		if p := s.GetProfileByID(id); p != nil {
 			return p
 		}
 	}
-	if id == -1 {
+	if s != nil && id == -1 {
 		// 随机选择一个 profile
 		if p := s.getRandomProfile(); p != nil {
 			return p

@@ -956,7 +956,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
-		"data":   modelsForListResponse(platform, h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")),
+		"data":   modelsForListResponse(platform, h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)),
 	})
 }
 

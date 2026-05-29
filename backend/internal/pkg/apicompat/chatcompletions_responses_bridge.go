@@ -21,13 +21,13 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 	}
 
 	out := &ChatCompletionsRequest{
-		Model:               req.Model,
-		Messages:            messages,
-		MaxCompletionTokens: req.MaxOutputTokens,
-		Temperature:         req.Temperature,
-		TopP:                req.TopP,
-		Stream:              req.Stream,
-		ServiceTier:         req.ServiceTier,
+		Model:       req.Model,
+		Messages:    messages,
+		MaxTokens:   req.MaxOutputTokens,
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
+		Stream:      req.Stream,
+		ServiceTier: req.ServiceTier,
 	}
 	if req.Reasoning != nil {
 		out.ReasoningEffort = req.Reasoning.Effort
@@ -39,6 +39,23 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 		out.ToolChoice = responsesToolChoiceToChatToolChoice(req.ToolChoice)
 	}
 
+	return out, nil
+}
+
+// ResponsesToChatCompletionsRequestTextOnly converts Responses input to a Chat
+// Completions request while replacing image content with text markers.
+func ResponsesToChatCompletionsRequestTextOnly(req *ResponsesRequest) (*ChatCompletionsRequest, error) {
+	out, err := ResponsesToChatCompletionsRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out.Messages {
+		textOnly, err := chatContentToTextOnly(out.Messages[i].Content)
+		if err != nil {
+			return nil, err
+		}
+		out.Messages[i].Content = textOnly
+	}
 	return out, nil
 }
 
@@ -251,6 +268,46 @@ func chatContentFromSingleResponsesPart(partType string, part map[string]json.Ra
 	}
 }
 
+func chatContentToTextOnly(raw json.RawMessage) (json.RawMessage, error) {
+	raw = bytesTrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return json.Marshal("")
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return raw, nil
+	}
+
+	var parts []ChatContentPart
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		textParts := make([]string, 0, len(parts))
+		for _, part := range parts {
+			switch part.Type {
+			case "text", "":
+				if part.Text != "" {
+					textParts = append(textParts, part.Text)
+				}
+			case "image_url":
+				textParts = append(textParts, "[Image omitted during text-only conversion]")
+			}
+		}
+		return json.Marshal(strings.Join(textParts, "\n\n"))
+	}
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		switch rawString(obj["type"]) {
+		case "input_image", "image_url":
+			return json.Marshal("[Image omitted during text-only conversion]")
+		default:
+			return json.Marshal(rawString(obj["text"]))
+		}
+	}
+
+	return json.Marshal("")
+}
+
 func responsesToolsToChatTools(tools []ResponsesTool) []ChatTool {
 	out := make([]ChatTool, 0, len(tools))
 	for _, tool := range tools {
@@ -337,6 +394,11 @@ func ChatCompletionsResponseToResponses(resp *ChatCompletionsResponse, model str
 		out.Usage = ChatUsageToResponsesUsage(resp.Usage)
 	}
 	return out
+}
+
+// ChatCompletionsToResponsesResponse preserves the older bridge helper name.
+func ChatCompletionsToResponsesResponse(resp *ChatCompletionsResponse, model string) *ResponsesResponse {
+	return ChatCompletionsResponseToResponses(resp, model)
 }
 
 func chatMessageToResponsesOutput(message ChatMessage) []ResponsesOutput {
