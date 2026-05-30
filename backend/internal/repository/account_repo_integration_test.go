@@ -299,9 +299,33 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 			name: "filter_by_status_active_excludes_runtime_blocked_accounts",
 			setup: func(client *dbent.Client) {
 				mustCreateAccount(s.T(), client, &service.Account{Name: "active-normal", Status: service.StatusActive})
+				past := time.Now().Add(-1 * time.Hour).UTC().Truncate(time.Second)
+				tokenDerived := mustCreateAccount(s.T(), client, &service.Account{
+					Name:        "active-openai-token-derived-expiry",
+					Platform:    service.PlatformOpenAI,
+					Type:        service.AccountTypeOAuth,
+					Credentials: map[string]any{"expires_at": past.Format(time.RFC3339)},
+					Status:      service.StatusActive,
+				})
+				err := client.Account.UpdateOneID(tokenDerived.ID).
+					SetExpiresAt(past).
+					SetAutoPauseOnExpired(true).
+					Exec(context.Background())
+				s.Require().NoError(err)
 				rateLimited := mustCreateAccount(s.T(), client, &service.Account{Name: "active-rate-limited", Status: service.StatusActive})
-				err := client.Account.UpdateOneID(rateLimited.ID).
+				err = client.Account.UpdateOneID(rateLimited.ID).
 					SetRateLimitResetAt(time.Now().Add(10 * time.Minute)).
+					Exec(context.Background())
+				s.Require().NoError(err)
+				overloaded := mustCreateAccount(s.T(), client, &service.Account{Name: "active-overloaded", Status: service.StatusActive})
+				err = client.Account.UpdateOneID(overloaded.ID).
+					SetOverloadUntil(time.Now().Add(10 * time.Minute)).
+					Exec(context.Background())
+				s.Require().NoError(err)
+				expired := mustCreateAccount(s.T(), client, &service.Account{Name: "active-expired", Status: service.StatusActive})
+				err = client.Account.UpdateOneID(expired.ID).
+					SetExpiresAt(past).
+					SetAutoPauseOnExpired(true).
 					Exec(context.Background())
 				s.Require().NoError(err)
 				tempUnsched := mustCreateAccount(s.T(), client, &service.Account{Name: "active-temp-unsched", Status: service.StatusActive})
@@ -316,9 +340,13 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 				s.Require().NoError(err)
 			},
 			status:    service.StatusActive,
-			wantCount: 1,
+			wantCount: 2,
 			validate: func(accounts []service.Account) {
-				s.Require().Equal("active-normal", accounts[0].Name)
+				names := make([]string, 0, len(accounts))
+				for _, account := range accounts {
+					names = append(names, account.Name)
+				}
+				s.Require().ElementsMatch([]string{"active-normal", "active-openai-token-derived-expiry"}, names)
 			},
 		},
 		{
@@ -730,7 +758,7 @@ func (s *AccountRepoSuite) TestAutoPauseExpiredAccountsPausesManualAccountExpiry
 		Name:        "openai-oauth-manual-expiry",
 		Platform:    service.PlatformOpenAI,
 		Type:        service.AccountTypeOAuth,
-		Credentials: map[string]any{"expires_at": "not-a-time"},
+		Credentials: map[string]any{"expires_at": "2026-13-01T00:00:00Z"},
 		Schedulable: true,
 	})
 	_, err := s.client.Account.UpdateOneID(account.ID).
