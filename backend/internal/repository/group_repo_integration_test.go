@@ -816,6 +816,18 @@ func (s *GroupRepoSuite) TestListWithFilters_RateLimitedAccountCount() {
 		[]any{"acc-expired", service.PlatformAnthropic, service.AccountTypeOAuth},
 		&expiredID))
 
+	var quotaExceededID int64
+	s.Require().NoError(scanSingleRow(s.ctx, s.tx,
+		"INSERT INTO accounts (name, platform, type, extra) VALUES ($1, $2, $3, $4::jsonb) RETURNING id",
+		[]any{"acc-quota-exceeded", service.PlatformAnthropic, service.AccountTypeAPIKey, `{"quota_limit": 10, "quota_used": 10}`},
+		&quotaExceededID))
+
+	var quotaExpiredID int64
+	s.Require().NoError(scanSingleRow(s.ctx, s.tx,
+		"INSERT INTO accounts (name, platform, type, extra) VALUES ($1, $2, $3, $4::jsonb) RETURNING id",
+		[]any{"acc-quota-expired", service.PlatformAnthropic, service.AccountTypeAPIKey, `{"quota_daily_limit": 10, "quota_daily_used": 10, "quota_daily_start": "2020-01-01T00:00:00Z"}`},
+		&quotaExpiredID))
+
 	_, err := s.tx.ExecContext(s.ctx,
 		"INSERT INTO account_groups (account_id, group_id, priority, created_at) VALUES ($1, $2, $3, NOW())",
 		normalID, g.ID, 1)
@@ -836,6 +848,10 @@ func (s *GroupRepoSuite) TestListWithFilters_RateLimitedAccountCount() {
 		"INSERT INTO account_groups (account_id, group_id, priority, created_at) VALUES ($1, $2, $3, NOW())",
 		expiredID, g.ID, 5)
 	s.Require().NoError(err)
+	_, err = s.tx.ExecContext(s.ctx,
+		"INSERT INTO account_groups (account_id, group_id, priority, created_at) VALUES ($1, $2, $3, NOW()), ($4, $2, $5, NOW())",
+		quotaExceededID, g.ID, 6, quotaExpiredID, 7)
+	s.Require().NoError(err)
 
 	isExclusive := false
 	groups, _, err := s.repo.ListWithFilters(s.ctx,
@@ -851,8 +867,8 @@ func (s *GroupRepoSuite) TestListWithFilters_RateLimitedAccountCount() {
 		}
 	}
 	s.Require().NotNil(found, "created group must appear in ListWithFilters result")
-	s.Assert().Equal(int64(5), found.AccountCount, "AccountCount must include all linked accounts")
-	s.Assert().Equal(int64(1), found.ActiveAccountCount, "ActiveAccountCount must include only currently schedulable accounts")
+	s.Assert().Equal(int64(7), found.AccountCount, "AccountCount must include all linked accounts")
+	s.Assert().Equal(int64(2), found.ActiveAccountCount, "ActiveAccountCount must include only currently schedulable accounts")
 	s.Assert().Equal(int64(3), found.RateLimitedAccountCount, "RateLimitedAccountCount must include temporarily limited accounts")
 
 	total, active, err := s.repo.GetAccountCount(s.ctx, g.ID)

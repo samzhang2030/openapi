@@ -696,6 +696,23 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 		SetAutoPauseOnExpired(true).
 		Save(s.ctx)
 	s.Require().NoError(err)
+	mustCreateAccount(s.T(), s.client, &service.Account{
+		Name: "a-quota-exceeded",
+		Type: service.AccountTypeAPIKey,
+		Extra: map[string]any{
+			"quota_limit": 10.0,
+			"quota_used":  10.0,
+		},
+	})
+	mustCreateAccount(s.T(), s.client, &service.Account{
+		Name: "a-quota-expired",
+		Type: service.AccountTypeAPIKey,
+		Extra: map[string]any{
+			"quota_daily_limit": 10.0,
+			"quota_daily_used":  10.0,
+			"quota_daily_start": past.Add(-24 * time.Hour).Format(time.RFC3339),
+		},
+	})
 
 	d1, d2, d3 := 100, 200, 300
 	logToday := &service.UsageLog{
@@ -759,8 +776,8 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 	s.Require().Equal(baseStats.ActiveUsers+1, stats.ActiveUsers, "ActiveUsers mismatch")
 	s.Require().Equal(baseStats.TotalAPIKeys+2, stats.TotalAPIKeys, "TotalAPIKeys mismatch")
 	s.Require().Equal(baseStats.ActiveAPIKeys+1, stats.ActiveAPIKeys, "ActiveAPIKeys mismatch")
-	s.Require().Equal(baseStats.TotalAccounts+6, stats.TotalAccounts, "TotalAccounts mismatch")
-	s.Require().Equal(baseStats.NormalAccounts+2, stats.NormalAccounts, "NormalAccounts mismatch")
+	s.Require().Equal(baseStats.TotalAccounts+8, stats.TotalAccounts, "TotalAccounts mismatch")
+	s.Require().Equal(baseStats.NormalAccounts+3, stats.NormalAccounts, "NormalAccounts mismatch")
 	s.Require().Equal(baseStats.ErrorAccounts+1, stats.ErrorAccounts, "ErrorAccounts mismatch")
 	s.Require().Equal(baseStats.RateLimitAccounts+1, stats.RateLimitAccounts, "RateLimitAccounts mismatch")
 	s.Require().Equal(baseStats.OverloadAccounts+1, stats.OverloadAccounts, "OverloadAccounts mismatch")

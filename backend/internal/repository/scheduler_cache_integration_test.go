@@ -48,6 +48,12 @@ func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T)
 			"window_cost_sticky_reserve":   8.0,
 			"max_sessions":                 4,
 			"session_idle_timeout_minutes": 11,
+			"quota_daily_limit":            30.0,
+			"quota_daily_used":             7.5,
+			"quota_daily_start":            now.Format(time.RFC3339),
+			"quota_daily_reset_mode":       "fixed",
+			"quota_daily_reset_hour":       9.0,
+			"quota_reset_timezone":         "UTC",
 			"unused_large_field":           strings.Repeat("y", 4096),
 		},
 		RateLimitResetAt:       &limitReset,
@@ -87,6 +93,11 @@ func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T)
 	require.Equal(t, 8.0, got.GetWindowCostStickyReserve())
 	require.Equal(t, 4, got.GetMaxSessions())
 	require.Equal(t, 11, got.GetSessionIdleTimeoutMinutes())
+	require.Equal(t, 30.0, got.GetQuotaDailyLimit())
+	require.Equal(t, 7.5, got.GetQuotaDailyUsed())
+	require.Equal(t, "fixed", got.GetQuotaDailyResetMode())
+	require.Equal(t, 9, got.GetQuotaDailyResetHour())
+	require.Equal(t, "UTC", got.GetQuotaResetTimezone())
 	require.Nil(t, got.Extra["unused_large_field"])
 	require.Equal(t, []int64{bucket.GroupID}, got.GroupIDs)
 	require.Len(t, got.AccountGroups, 1)

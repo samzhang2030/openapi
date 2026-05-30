@@ -1609,6 +1609,7 @@ func schedulableWindowPredicatesWithoutSchedulable(now time.Time) []dbpredicate.
 	return []dbpredicate.Account{
 		tempUnschedulablePredicate(),
 		notExpiredPredicate(now),
+		quotaAvailableForSchedulingPredicate(),
 		dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
 		dbaccount.Or(dbaccount.RateLimitResetAtIsNil(), dbaccount.RateLimitResetAtLTE(now)),
 	}
@@ -1649,6 +1650,7 @@ func accountAvailableForSchedulingSQL(prefix, nowExpr string) string {
 	return prefix + `status = '` + service.StatusActive + `'
 				AND ` + prefix + `schedulable = true
 				AND ` + accountNotExpiredForSchedulingSQL(prefix, nowExpr) + `
+				AND ` + accountQuotaAvailableForSchedulingSQL(prefix, nowExpr) + `
 				AND (` + prefix + `rate_limit_reset_at IS NULL OR ` + prefix + `rate_limit_reset_at <= ` + nowExpr + `)
 				AND (` + prefix + `overload_until IS NULL OR ` + prefix + `overload_until <= ` + nowExpr + `)
 				AND (` + prefix + `temp_unschedulable_until IS NULL OR ` + prefix + `temp_unschedulable_until <= ` + nowExpr + `)`
@@ -1658,9 +1660,81 @@ func accountNotExpiredForSchedulingSQL(prefix, nowExpr string) string {
 	return `(` + prefix + `expires_at IS NULL OR ` + prefix + `expires_at > ` + nowExpr + ` OR ` + prefix + `auto_pause_on_expired = FALSE OR ` + openAIOAuthTokenDerivedAccountExpirySQL(prefix) + `)`
 }
 
+func quotaAvailableForSchedulingPredicate() dbpredicate.Account {
+	return dbpredicate.Account(func(s *entsql.Selector) {
+		s.Where(entsql.P(func(b *entsql.Builder) {
+			b.WriteString(accountQuotaAvailableForSchedulingSQLWithColumns(
+				s.C(dbaccount.FieldType),
+				s.C(dbaccount.FieldExtra),
+				"NOW()",
+			))
+		}))
+	})
+}
+
+func accountQuotaAvailableForSchedulingSQL(prefix, nowExpr string) string {
+	return accountQuotaAvailableForSchedulingSQLWithColumns(prefix+dbaccount.FieldType, prefix+dbaccount.FieldExtra, nowExpr)
+}
+
+func accountQuotaAvailableForSchedulingSQLWithColumns(typeCol, extraCol, nowExpr string) string {
+	totalLimit := jsonbNumericSQL(extraCol, "quota_limit")
+	totalUsed := jsonbNumericSQL(extraCol, "quota_used")
+	dailyLimit := jsonbNumericSQL(extraCol, "quota_daily_limit")
+	dailyUsed := jsonbNumericSQL(extraCol, "quota_daily_used")
+	weeklyLimit := jsonbNumericSQL(extraCol, "quota_weekly_limit")
+	weeklyUsed := jsonbNumericSQL(extraCol, "quota_weekly_used")
+
+	return `(` + typeCol + ` NOT IN ('` + service.AccountTypeAPIKey + `', '` + service.AccountTypeBedrock + `') OR (
+				(` + totalLimit + ` <= 0 OR ` + totalUsed + ` < ` + totalLimit + `)
+				AND (` + dailyLimit + ` <= 0 OR ` + accountDailyQuotaExpiredSQL(extraCol, nowExpr) + ` OR ` + dailyUsed + ` < ` + dailyLimit + `)
+				AND (` + weeklyLimit + ` <= 0 OR ` + accountWeeklyQuotaExpiredSQL(extraCol, nowExpr) + ` OR ` + weeklyUsed + ` < ` + weeklyLimit + `)
+			))`
+}
+
+func accountDailyQuotaExpiredSQL(extraCol, nowExpr string) string {
+	resetAt := jsonbTimestampSQL(extraCol, "quota_daily_reset_at")
+	start := jsonbTimestampSQL(extraCol, "quota_daily_start")
+	return `(CASE WHEN COALESCE(` + extraCol + `->>'quota_daily_reset_mode', 'rolling') = 'fixed'
+				THEN ` + nowExpr + ` >= COALESCE(` + resetAt + `, '1970-01-01'::timestamptz)
+				ELSE COALESCE(` + start + `, '1970-01-01'::timestamptz) + INTERVAL '24 hours' <= ` + nowExpr + `
+			END)`
+}
+
+func accountWeeklyQuotaExpiredSQL(extraCol, nowExpr string) string {
+	resetAt := jsonbTimestampSQL(extraCol, "quota_weekly_reset_at")
+	start := jsonbTimestampSQL(extraCol, "quota_weekly_start")
+	return `(CASE WHEN COALESCE(` + extraCol + `->>'quota_weekly_reset_mode', 'rolling') = 'fixed'
+				THEN ` + nowExpr + ` >= COALESCE(` + resetAt + `, '1970-01-01'::timestamptz)
+				ELSE COALESCE(` + start + `, '1970-01-01'::timestamptz) + INTERVAL '168 hours' <= ` + nowExpr + `
+			END)`
+}
+
+func jsonbNumericSQL(jsonbCol, key string) string {
+	value := "btrim(" + jsonbCol + "->>'" + key + "')"
+	return `(CASE WHEN ` + value + ` ~ '^-?\d+(\.\d+)?$' THEN (` + value + `)::numeric ELSE 0 END)`
+}
+
+func jsonbTimestampSQL(jsonbCol, key string) string {
+	value := "btrim(" + jsonbCol + "->>'" + key + "')"
+	rfc3339Pattern := rfc3339TimestampPattern()
+	return `(CASE
+				WHEN ` + value + ` ~ '` + rfc3339Pattern + `'
+				THEN (` + value + `)::timestamptz
+				ELSE NULL
+			END)`
+}
+
+func rfc3339TimestampPattern() string {
+	leapYear := `(\d{2}(0[48]|[2468][048]|[13579][26])|(0[48]|[2468][048]|[13579][26])00)`
+	date := `((` + leapYear + `)-02-29|\d{4}-((01|03|05|07|08|10|12)-(0[1-9]|[12][0-9]|3[01])|(04|06|09|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-8])))`
+	timeOfDay := `([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d+)?`
+	offset := `(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])`
+	return `^` + date + `T` + timeOfDay + offset + `$`
+}
+
 func openAIOAuthTokenDerivedAccountExpirySQLWithColumns(platformCol, typeCol, credentialsCol, expiresAtCol string) string {
 	expiresAtText := "btrim(" + credentialsCol + "->>'expires_at')"
-	rfc3339Pattern := `^\d{4}-((01|03|05|07|08|10|12)-(0[1-9]|[12][0-9]|3[01])|(04|06|09|11)-(0[1-9]|[12][0-9]|30)|02-(0[1-9]|1[0-9]|2[0-8]))T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.\d+)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$`
+	rfc3339Pattern := rfc3339TimestampPattern()
 	credentialExpiresAt := `(CASE
 					WHEN ` + expiresAtText + ` ~ '^\d+$' THEN to_timestamp((` + expiresAtText + `)::bigint)
 					WHEN ` + expiresAtText + ` ~ '` + rfc3339Pattern + `' THEN (` + expiresAtText + `)::timestamptz

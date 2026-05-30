@@ -4,6 +4,7 @@ package repository
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,47 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 	require.Equal(t, false, got.Extra["openai_responses_supported"])
 	require.Equal(t, true, got.Extra["mixed_scheduling"])
 	require.Nil(t, got.Extra["unused_large_field"])
+}
+
+func TestBuildSchedulerMetadataAccount_KeepsQuotaFields(t *testing.T) {
+	now := time.Now().UTC()
+	account := service.Account{
+		ID:       42,
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Status:   service.StatusActive,
+		Extra: map[string]any{
+			"quota_limit":             200.0,
+			"quota_used":              10.0,
+			"quota_daily_limit":       20.0,
+			"quota_daily_used":        20.0,
+			"quota_daily_start":       now.Format(time.RFC3339),
+			"quota_daily_reset_mode":  "fixed",
+			"quota_daily_reset_hour":  9.0,
+			"quota_weekly_limit":      100.0,
+			"quota_weekly_used":       40.0,
+			"quota_weekly_start":      now.Format(time.RFC3339),
+			"quota_weekly_reset_mode": "fixed",
+			"quota_weekly_reset_day":  1.0,
+			"quota_weekly_reset_hour": 9.0,
+			"quota_reset_timezone":    "UTC",
+			"unused_large_field":      "drop-me",
+		},
+	}
+
+	got := buildSchedulerMetadataAccount(account)
+
+	require.Equal(t, 200.0, got.Extra["quota_limit"])
+	require.Equal(t, 20.0, got.Extra["quota_daily_limit"])
+	require.Equal(t, 20.0, got.Extra["quota_daily_used"])
+	require.Equal(t, now.Format(time.RFC3339), got.Extra["quota_daily_start"])
+	require.Equal(t, "fixed", got.Extra["quota_daily_reset_mode"])
+	require.Equal(t, 9.0, got.Extra["quota_daily_reset_hour"])
+	require.Equal(t, 100.0, got.Extra["quota_weekly_limit"])
+	require.Equal(t, 40.0, got.Extra["quota_weekly_used"])
+	require.Equal(t, "UTC", got.Extra["quota_reset_timezone"])
+	require.Nil(t, got.Extra["unused_large_field"])
+	require.True(t, got.IsQuotaExceeded(), "scheduler metadata must preserve quota fields used by IsSchedulable")
 }
 
 func TestBuildSchedulerMetadataAccount_KeepsSlimGroupMembership(t *testing.T) {

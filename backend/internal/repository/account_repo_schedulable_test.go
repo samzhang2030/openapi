@@ -2,12 +2,22 @@ package repository
 
 import (
 	"context"
+	"regexp"
 	"testing"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRFC3339TimestampPatternAllowsValidLeapDay(t *testing.T) {
+	re := regexp.MustCompile(rfc3339TimestampPattern())
+
+	require.True(t, re.MatchString("2028-02-29T00:00:00Z"))
+	require.True(t, re.MatchString("2026-02-28T23:59:59+08:00"))
+	require.False(t, re.MatchString("2026-02-29T00:00:00Z"))
+	require.False(t, re.MatchString("2026-04-31T00:00:00Z"))
+}
 
 func TestSetSchedulableTrueClearsExpiredAutoPauseSQL(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))

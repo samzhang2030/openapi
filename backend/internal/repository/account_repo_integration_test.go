@@ -328,6 +328,35 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 					SetAutoPauseOnExpired(true).
 					Exec(context.Background())
 				s.Require().NoError(err)
+				mustCreateAccount(s.T(), client, &service.Account{
+					Name:   "active-quota-exceeded",
+					Type:   service.AccountTypeAPIKey,
+					Status: service.StatusActive,
+					Extra: map[string]any{
+						"quota_limit": 100.0,
+						"quota_used":  100.0,
+					},
+				})
+				mustCreateAccount(s.T(), client, &service.Account{
+					Name:   "active-daily-quota-expired",
+					Type:   service.AccountTypeAPIKey,
+					Status: service.StatusActive,
+					Extra: map[string]any{
+						"quota_daily_limit": 10.0,
+						"quota_daily_used":  10.0,
+						"quota_daily_start": time.Now().Add(-25 * time.Hour).UTC().Format(time.RFC3339),
+					},
+				})
+				mustCreateAccount(s.T(), client, &service.Account{
+					Name:   "active-daily-quota-exceeded",
+					Type:   service.AccountTypeAPIKey,
+					Status: service.StatusActive,
+					Extra: map[string]any{
+						"quota_daily_limit": 10.0,
+						"quota_daily_used":  10.0,
+						"quota_daily_start": time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339),
+					},
+				})
 				tempUnsched := mustCreateAccount(s.T(), client, &service.Account{Name: "active-temp-unsched", Status: service.StatusActive})
 				err = client.Account.UpdateOneID(tempUnsched.ID).
 					SetTempUnschedulableUntil(time.Now().Add(15 * time.Minute)).
@@ -340,13 +369,13 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 				s.Require().NoError(err)
 			},
 			status:    service.StatusActive,
-			wantCount: 2,
+			wantCount: 3,
 			validate: func(accounts []service.Account) {
 				names := make([]string, 0, len(accounts))
 				for _, account := range accounts {
 					names = append(names, account.Name)
 				}
-				s.Require().ElementsMatch([]string{"active-normal", "active-openai-token-derived-expiry"}, names)
+				s.Require().ElementsMatch([]string{"active-normal", "active-openai-token-derived-expiry", "active-daily-quota-expired"}, names)
 			},
 		},
 		{
@@ -609,11 +638,49 @@ func (s *AccountRepoSuite) TestListSchedulable() {
 	overloaded := mustCreateAccount(s.T(), s.client, &service.Account{Name: "over", Schedulable: true, OverloadUntil: &future})
 	mustBindAccountToGroup(s.T(), s.client, overloaded.ID, group.ID, 1)
 
+	quotaExceeded := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:        "quota-exceeded",
+		Type:        service.AccountTypeAPIKey,
+		Schedulable: true,
+		Extra: map[string]any{
+			"quota_limit": 10.0,
+			"quota_used":  10.0,
+		},
+	})
+	mustBindAccountToGroup(s.T(), s.client, quotaExceeded.ID, group.ID, 1)
+
+	quotaExpired := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:        "quota-expired",
+		Type:        service.AccountTypeAPIKey,
+		Schedulable: true,
+		Extra: map[string]any{
+			"quota_daily_limit": 10.0,
+			"quota_daily_used":  10.0,
+			"quota_daily_start": now.Add(-25 * time.Hour).UTC().Format(time.RFC3339),
+		},
+	})
+	mustBindAccountToGroup(s.T(), s.client, quotaExpired.ID, group.ID, 1)
+
+	dailyQuotaExceeded := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:        "daily-quota-exceeded",
+		Type:        service.AccountTypeAPIKey,
+		Schedulable: true,
+		Extra: map[string]any{
+			"quota_daily_limit": 10.0,
+			"quota_daily_used":  10.0,
+			"quota_daily_start": now.Add(-1 * time.Hour).UTC().Format(time.RFC3339),
+		},
+	})
+	mustBindAccountToGroup(s.T(), s.client, dailyQuotaExceeded.ID, group.ID, 1)
+
 	sched, err := s.repo.ListSchedulable(s.ctx)
 	s.Require().NoError(err, "ListSchedulable")
 	ids := idsOfAccounts(sched)
 	s.Require().Contains(ids, okAcc.ID)
 	s.Require().NotContains(ids, overloaded.ID)
+	s.Require().NotContains(ids, quotaExceeded.ID)
+	s.Require().Contains(ids, quotaExpired.ID)
+	s.Require().NotContains(ids, dailyQuotaExceeded.ID)
 }
 
 func (s *AccountRepoSuite) TestListSchedulableByGroupID_TimeBoundaries_And_StatusUpdates() {
