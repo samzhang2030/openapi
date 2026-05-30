@@ -246,6 +246,11 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 		if existing := index.Find(item.IdentityKeys); existing != nil && updateExisting {
 			mergedCredentials := mergeCodexImportCredentials(existing.Credentials, credentials, item)
 			mergedExtra := mergeCodexImportMap(existing.Extra, extra)
+			expiresAtForUpdate := effectiveExpiresAt
+			if shouldClearCodexImportedAccountExpiry(req, *existing, item, effectiveExpiresAt) {
+				clearExpiresAt := int64(0)
+				expiresAtForUpdate = &clearExpiresAt
+			}
 			updateInput := &service.UpdateAccountInput{
 				Credentials:        mergedCredentials,
 				Extra:              mergedExtra,
@@ -253,7 +258,7 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 				Priority:           req.Priority,
 				RateMultiplier:     req.RateMultiplier,
 				LoadFactor:         req.LoadFactor,
-				ExpiresAt:          effectiveExpiresAt,
+				ExpiresAt:          expiresAtForUpdate,
 				AutoPauseOnExpired: autoPauseOnExpired,
 			}
 			if req.ProxyID != nil {
@@ -720,26 +725,24 @@ func resolveCodexImportExpiry(req CodexSessionImportRequest, item *codexImportAc
 	if item.RefreshToken == "" {
 		if item.TokenExpiresAt != nil {
 			tokenExpiresAt := item.TokenExpiresAt.UTC()
-			accountExpiresAt = &tokenExpiresAt
 			credentialExpiresAt = &tokenExpiresAt
 		}
 		if requestExpiresAt != nil {
-			accountExpiresAt = earlierCodexTime(accountExpiresAt, requestExpiresAt)
-			credentialExpiresAt = earlierCodexTime(credentialExpiresAt, requestExpiresAt)
+			accountExpiresAt = requestExpiresAt
 		}
-		if accountExpiresAt == nil {
+		if accountExpiresAt == nil && credentialExpiresAt == nil {
 			return nil, nil, nil, nil, errors.New("未包含 refresh_token，且无法解析 accessToken 过期时间；请在第一步设置过期时间后再导入")
 		}
-		if accountExpiresAt.Unix() <= time.Now().UTC().Unix()-codexImportClockSkewSeconds {
+		if accountExpiresAt != nil && accountExpiresAt.Unix() <= time.Now().UTC().Unix()-codexImportClockSkewSeconds {
 			return nil, nil, nil, nil, fmt.Errorf("过期时间已过期: %s", accountExpiresAt.Format(time.RFC3339))
 		}
-		warnings = append(warnings, "未包含 refresh_token，已按 accessToken/账号过期时间设置自动停止调度")
-		if req.AutoPauseOnExpired != nil && !*req.AutoPauseOnExpired {
-			warnings = append(warnings, "未包含 refresh_token，已强制开启过期自动暂停")
+		warnings = append(warnings, "未包含 refresh_token，accessToken 过期后无法自动续期；不会因 token 过期自动暂停账号")
+		var expiresAtUnix *int64
+		if accountExpiresAt != nil {
+			v := accountExpiresAt.Unix()
+			expiresAtUnix = &v
 		}
-		autoPause := true
-		expiresAtUnix := accountExpiresAt.Unix()
-		return &expiresAtUnix, credentialExpiresAt, &autoPause, warnings, nil
+		return expiresAtUnix, credentialExpiresAt, req.AutoPauseOnExpired, warnings, nil
 	}
 
 	if requestExpiresAt != nil {
@@ -757,16 +760,28 @@ func resolveCodexImportExpiry(req CodexSessionImportRequest, item *codexImportAc
 	return expiresAtUnix, credentialExpiresAt, req.AutoPauseOnExpired, warnings, nil
 }
 
-func earlierCodexTime(current, candidate *time.Time) *time.Time {
-	if candidate == nil {
-		return current
+func shouldClearCodexImportedAccountExpiry(req CodexSessionImportRequest, existing service.Account, item *codexImportAccount, effectiveExpiresAt *int64) bool {
+	if req.ExpiresAt != nil || effectiveExpiresAt != nil {
+		return false
 	}
-	if current == nil || candidate.Before(*current) {
-		t := candidate.UTC()
-		return &t
+	if existing.Platform != service.PlatformOpenAI || existing.Type != service.AccountTypeOAuth {
+		return false
 	}
-	t := current.UTC()
-	return &t
+	if existing.ExpiresAt == nil || item == nil || item.TokenExpiresAt == nil {
+		return false
+	}
+	credentialExpiresAt := existing.GetCredentialAsTime("expires_at")
+	if credentialExpiresAt == nil {
+		return false
+	}
+	return timesClose(existing.ExpiresAt.UTC(), credentialExpiresAt.UTC(), 2*time.Second)
+}
+
+func timesClose(a, b time.Time, tolerance time.Duration) bool {
+	if a.After(b) {
+		return a.Sub(b) <= tolerance
+	}
+	return b.Sub(a) <= tolerance
 }
 
 func sanitizeCodexImportCredentialExtras(input map[string]any) map[string]any {

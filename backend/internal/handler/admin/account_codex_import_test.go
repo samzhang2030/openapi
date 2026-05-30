@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 func TestParseCodexSessionImportEntriesSupportsRawTokenJSONAndArray(t *testing.T) {
@@ -229,7 +231,7 @@ func TestNormalizeCodexImportRejectsExpiredAccessToken(t *testing.T) {
 	}
 }
 
-func TestResolveCodexImportExpiryForNoRefreshTokenUsesTokenExpiry(t *testing.T) {
+func TestResolveCodexImportExpiryForNoRefreshTokenKeepsTokenExpiryInCredentialsOnly(t *testing.T) {
 	tokenExpiresAt := time.Now().Add(time.Hour).UTC()
 	item := &codexImportAccount{
 		AccessToken:    "access-token",
@@ -244,14 +246,14 @@ func TestResolveCodexImportExpiryForNoRefreshTokenUsesTokenExpiry(t *testing.T) 
 	if err != nil {
 		t.Fatalf("resolveCodexImportExpiry error = %v", err)
 	}
-	if accountExpiresAt == nil || *accountExpiresAt != tokenExpiresAt.Unix() {
-		t.Fatalf("account expires_at = %v, want %d", accountExpiresAt, tokenExpiresAt.Unix())
+	if accountExpiresAt != nil {
+		t.Fatalf("account expires_at = %v, want nil", accountExpiresAt)
 	}
 	if credentialExpiresAt == nil || credentialExpiresAt.Unix() != tokenExpiresAt.Unix() {
 		t.Fatalf("credential expires_at = %v, want %s", credentialExpiresAt, tokenExpiresAt)
 	}
-	if autoPause == nil || !*autoPause {
-		t.Fatalf("autoPause = %v, want true", autoPause)
+	if autoPause == nil || *autoPause {
+		t.Fatalf("autoPause = %v, want false", autoPause)
 	}
 	if len(warnings) == 0 {
 		t.Fatalf("warnings should not be empty")
@@ -274,7 +276,7 @@ func TestResolveCodexImportExpiryForNoRefreshTokenRequiresExpiry(t *testing.T) {
 	}
 }
 
-func TestResolveCodexImportExpiryForNoRefreshTokenUsesEarlierRequestExpiry(t *testing.T) {
+func TestResolveCodexImportExpiryForNoRefreshTokenSeparatesAccountAndTokenExpiry(t *testing.T) {
 	tokenExpiresAt := time.Now().Add(2 * time.Hour).UTC()
 	requestExpiresAt := time.Now().Add(time.Hour).UTC()
 	item := &codexImportAccount{
@@ -293,8 +295,37 @@ func TestResolveCodexImportExpiryForNoRefreshTokenUsesEarlierRequestExpiry(t *te
 	if accountExpiresAt == nil || *accountExpiresAt != requestExpiresAt.Unix() {
 		t.Fatalf("account expires_at = %v, want %d", accountExpiresAt, requestExpiresAt.Unix())
 	}
-	if credentialExpiresAt == nil || credentialExpiresAt.Unix() != requestExpiresAt.Unix() {
-		t.Fatalf("credential expires_at = %v, want %s", credentialExpiresAt, requestExpiresAt)
+	if credentialExpiresAt == nil || credentialExpiresAt.Unix() != tokenExpiresAt.Unix() {
+		t.Fatalf("credential expires_at = %v, want %s", credentialExpiresAt, tokenExpiresAt)
+	}
+}
+
+func TestShouldClearCodexImportedAccountExpiryOnlyWhenItMirrorsTokenExpiry(t *testing.T) {
+	tokenExpiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	item := &codexImportAccount{TokenExpiresAt: &tokenExpiresAt}
+
+	existing := service.Account{
+		Platform:  service.PlatformOpenAI,
+		Type:      service.AccountTypeOAuth,
+		ExpiresAt: &tokenExpiresAt,
+		Credentials: map[string]any{
+			"expires_at": tokenExpiresAt.Format(time.RFC3339),
+		},
+	}
+
+	if !shouldClearCodexImportedAccountExpiry(CodexSessionImportRequest{}, existing, item, nil) {
+		t.Fatal("should clear token-derived account expires_at")
+	}
+
+	requestExpiry := tokenExpiresAt.Add(24 * time.Hour).Unix()
+	if shouldClearCodexImportedAccountExpiry(CodexSessionImportRequest{ExpiresAt: &requestExpiry}, existing, item, &requestExpiry) {
+		t.Fatal("should not clear explicit request expires_at")
+	}
+
+	manualExpiresAt := tokenExpiresAt.Add(24 * time.Hour)
+	existing.ExpiresAt = &manualExpiresAt
+	if shouldClearCodexImportedAccountExpiry(CodexSessionImportRequest{}, existing, item, nil) {
+		t.Fatal("should not clear manual account expires_at")
 	}
 }
 
