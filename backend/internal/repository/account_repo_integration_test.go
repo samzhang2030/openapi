@@ -97,6 +97,15 @@ func TestAccountRepoSuite(t *testing.T) {
 	suite.Run(t, new(AccountRepoSuite))
 }
 
+func accountListContainsID(accounts []service.Account, id int64) bool {
+	for _, account := range accounts {
+		if account.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // --- Create / GetByID / Update / Delete ---
 
 func (s *AccountRepoSuite) TestCreate() {
@@ -678,6 +687,66 @@ func (s *AccountRepoSuite) TestSetSchedulableTrueKeepsAutoPauseForUnexpiredAccou
 	s.Require().NoError(err)
 	s.Require().True(got.Schedulable)
 	s.Require().True(got.AutoPauseOnExpired)
+}
+
+func (s *AccountRepoSuite) TestAutoPauseExpiredAccountsSkipsOpenAIOAuthTokenDerivedExpiry() {
+	past := time.Now().Add(-1 * time.Hour).UTC().Truncate(time.Second)
+	group := mustCreateGroup(s.T(), s.client, &service.Group{Name: "token-expiry-group", Platform: service.PlatformOpenAI})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:        "openai-oauth-token-expiry",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeOAuth,
+		Credentials: map[string]any{"expires_at": past.Format(time.RFC3339)},
+		Schedulable: true,
+	})
+	mustBindAccountToGroup(s.T(), s.client, account.ID, group.ID, 1)
+	_, err := s.client.Account.UpdateOneID(account.ID).
+		SetExpiresAt(past).
+		SetAutoPauseOnExpired(true).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	rows, err := s.repo.AutoPauseExpiredAccounts(s.ctx, time.Now())
+	s.Require().NoError(err)
+	s.Require().Equal(int64(0), rows)
+
+	got, err := s.repo.GetByID(s.ctx, account.ID)
+	s.Require().NoError(err)
+	s.Require().True(got.Schedulable)
+	s.Require().True(got.IsSchedulable())
+
+	byPlatform, err := s.repo.ListSchedulableByPlatform(s.ctx, service.PlatformOpenAI)
+	s.Require().NoError(err)
+	s.Require().True(accountListContainsID(byPlatform, account.ID), "token-derived expiry account must remain schedulable by platform")
+
+	byGroup, err := s.repo.ListSchedulableByGroupID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().True(accountListContainsID(byGroup, account.ID), "token-derived expiry account must remain schedulable by group")
+}
+
+func (s *AccountRepoSuite) TestAutoPauseExpiredAccountsPausesManualAccountExpiry() {
+	past := time.Now().Add(-1 * time.Hour).UTC().Truncate(time.Second)
+	account := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:        "openai-oauth-manual-expiry",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeOAuth,
+		Credentials: map[string]any{"expires_at": "not-a-time"},
+		Schedulable: true,
+	})
+	_, err := s.client.Account.UpdateOneID(account.ID).
+		SetExpiresAt(past).
+		SetAutoPauseOnExpired(true).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	rows, err := s.repo.AutoPauseExpiredAccounts(s.ctx, time.Now())
+	s.Require().NoError(err)
+	s.Require().Equal(int64(1), rows)
+
+	got, err := s.repo.GetByID(s.ctx, account.ID)
+	s.Require().NoError(err)
+	s.Require().False(got.Schedulable)
+	s.Require().False(got.IsSchedulable())
 }
 
 func (s *AccountRepoSuite) TestBulkUpdate_SyncSchedulerSnapshotOnDisabled() {

@@ -5,8 +5,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -712,6 +714,62 @@ func (s *GroupRepoSuite) TestListWithFilters_ActiveAccountCount_LessThanTotal() 
 	s.Require().NoError(err)
 	s.Assert().Equal(found.AccountCount, total, "GetAccountCount total must match ListWithFilters AccountCount")
 	s.Assert().Equal(found.ActiveAccountCount, active, "GetAccountCount active must match ListWithFilters ActiveAccountCount")
+}
+
+func (s *GroupRepoSuite) TestListWithFilters_ActiveAccountCount_IgnoresOpenAITokenDerivedExpiry() {
+	g := &service.Group{
+		Name:             "g-openai-token-expiry",
+		Platform:         service.PlatformOpenAI,
+		RateMultiplier:   1.0,
+		IsExclusive:      false,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, g))
+
+	past := time.Now().Add(-1 * time.Hour).UTC().Truncate(time.Second)
+	credentialsJSON, err := json.Marshal(map[string]any{"expires_at": past.Format(time.RFC3339)})
+	s.Require().NoError(err)
+
+	var accountID int64
+	s.Require().NoError(scanSingleRow(
+		s.ctx, s.tx,
+		"INSERT INTO accounts (name, platform, type, credentials, expires_at, auto_pause_on_expired) VALUES ($1, $2, $3, $4::jsonb, $5, TRUE) RETURNING id",
+		[]any{
+			"acc-openai-token-expiry",
+			service.PlatformOpenAI,
+			service.AccountTypeOAuth,
+			string(credentialsJSON),
+			past,
+		},
+		&accountID,
+	))
+	_, err = s.tx.ExecContext(s.ctx,
+		"INSERT INTO account_groups (account_id, group_id, priority, created_at) VALUES ($1, $2, $3, NOW())",
+		accountID, g.ID, 1)
+	s.Require().NoError(err)
+
+	isExclusive := false
+	groups, _, err := s.repo.ListWithFilters(s.ctx,
+		pagination.PaginationParams{Page: 1, PageSize: 100},
+		service.PlatformOpenAI, service.StatusActive, "", &isExclusive)
+	s.Require().NoError(err)
+
+	var found *service.Group
+	for i := range groups {
+		if groups[i].ID == g.ID {
+			found = &groups[i]
+			break
+		}
+	}
+	s.Require().NotNil(found, "created group must appear in ListWithFilters result")
+	s.Assert().Equal(int64(1), found.AccountCount)
+	s.Assert().Equal(int64(1), found.ActiveAccountCount)
+
+	total, active, err := s.repo.GetAccountCount(s.ctx, g.ID)
+	s.Require().NoError(err)
+	s.Assert().Equal(int64(1), total)
+	s.Assert().Equal(int64(1), active)
 }
 
 // TestListWithFilters_RateLimitedAccountCount 验证临时受限账号不会计入可用账号数。

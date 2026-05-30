@@ -1287,7 +1287,7 @@ func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedu
 }
 
 func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now time.Time) (int64, error) {
-	result, err := r.sql.ExecContext(ctx, `
+	query := `
 		UPDATE accounts
 		SET schedulable = FALSE,
 			updated_at = NOW()
@@ -1296,7 +1296,9 @@ func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now ti
 			AND auto_pause_on_expired = TRUE
 			AND expires_at IS NOT NULL
 			AND expires_at <= $1
-	`, now)
+			AND NOT ` + openAIOAuthTokenDerivedAccountExpirySQL("") + `
+	`
+	result, err := r.sql.ExecContext(ctx, query, now)
 	if err != nil {
 		return 0, err
 	}
@@ -1635,7 +1637,43 @@ func notExpiredPredicate(now time.Time) dbpredicate.Account {
 		dbaccount.ExpiresAtIsNil(),
 		dbaccount.ExpiresAtGT(now),
 		dbaccount.AutoPauseOnExpiredEQ(false),
+		openAIOAuthTokenDerivedAccountExpiryPredicate(),
 	)
+}
+
+func openAIOAuthTokenDerivedAccountExpiryPredicate() dbpredicate.Account {
+	return dbpredicate.Account(func(s *entsql.Selector) {
+		s.Where(entsql.P(func(b *entsql.Builder) {
+			b.WriteString(openAIOAuthTokenDerivedAccountExpirySQLWithColumns(
+				s.C(dbaccount.FieldPlatform),
+				s.C(dbaccount.FieldType),
+				s.C(dbaccount.FieldCredentials),
+				s.C(dbaccount.FieldExpiresAt),
+			))
+		}))
+	})
+}
+
+func openAIOAuthTokenDerivedAccountExpirySQL(prefix string) string {
+	return openAIOAuthTokenDerivedAccountExpirySQLWithColumns(
+		prefix+dbaccount.FieldPlatform,
+		prefix+dbaccount.FieldType,
+		prefix+dbaccount.FieldCredentials,
+		prefix+dbaccount.FieldExpiresAt,
+	)
+}
+
+func openAIOAuthTokenDerivedAccountExpirySQLWithColumns(platformCol, typeCol, credentialsCol, expiresAtCol string) string {
+	expiresAtText := "btrim(" + credentialsCol + "->>'expires_at')"
+	credentialExpiresAt := `(CASE
+					WHEN ` + expiresAtText + ` ~ '^\d+$' THEN to_timestamp((` + expiresAtText + `)::bigint)
+					WHEN ` + expiresAtText + ` ~ '^\d{4}-\d{2}-\d{2}T' THEN (` + expiresAtText + `)::timestamptz
+					ELSE NULL
+				END)`
+	return `COALESCE((` + platformCol + ` = '` + service.PlatformOpenAI + `'
+				AND ` + typeCol + ` = '` + service.AccountTypeOAuth + `'
+				AND ` + credentialsCol + ` ? 'expires_at'
+				AND ` + credentialExpiresAt + ` BETWEEN ` + expiresAtCol + ` - INTERVAL '2 seconds' AND ` + expiresAtCol + ` + INTERVAL '2 seconds'), FALSE)`
 }
 
 func (r *accountRepository) loadProxies(ctx context.Context, proxyIDs []int64) (map[int64]*service.Proxy, error) {

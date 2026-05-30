@@ -110,7 +110,7 @@ func (a *Account) IsSchedulable() bool {
 		return false
 	}
 	now := time.Now()
-	if a.AutoPauseOnExpired && a.ExpiresAt != nil && !now.Before(*a.ExpiresAt) {
+	if a.IsAccountExpiryExpired(now) {
 		return false
 	}
 	if a.OverloadUntil != nil && now.Before(*a.OverloadUntil) {
@@ -126,6 +126,31 @@ func (a *Account) IsSchedulable() bool {
 		return false
 	}
 	return true
+}
+
+func (a *Account) IsAccountExpiryExpired(now time.Time) bool {
+	if a == nil || !a.AutoPauseOnExpired || a.ExpiresAt == nil || now.Before(*a.ExpiresAt) {
+		return false
+	}
+	return !a.HasTokenDerivedAccountExpiry()
+}
+
+func (a *Account) HasTokenDerivedAccountExpiry() bool {
+	if a == nil || a.Platform != PlatformOpenAI || a.Type != AccountTypeOAuth || a.ExpiresAt == nil {
+		return false
+	}
+	tokenExpiresAt := a.GetCredentialAsTime("expires_at")
+	if tokenExpiresAt == nil {
+		return false
+	}
+	return timesWithin(*a.ExpiresAt, *tokenExpiresAt, 2*time.Second)
+}
+
+func timesWithin(a, b time.Time, tolerance time.Duration) bool {
+	if a.After(b) {
+		return a.Sub(b) <= tolerance
+	}
+	return b.Sub(a) <= tolerance
 }
 
 func (a *Account) IsRateLimited() bool {
