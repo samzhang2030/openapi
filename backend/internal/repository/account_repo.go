@@ -813,7 +813,11 @@ func (r *accountRepository) ClearError(ctx context.Context, id int64) error {
 }
 
 func (r *accountRepository) AddToGroup(ctx context.Context, accountID, groupID int64, priority int) error {
-	_, err := r.client.AccountGroup.Create().
+	existingGroupIDs, err := r.loadAccountGroupIDs(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	_, err = r.client.AccountGroup.Create().
 		SetAccountID(accountID).
 		SetGroupID(groupID).
 		SetPriority(priority).
@@ -821,7 +825,7 @@ func (r *accountRepository) AddToGroup(ctx context.Context, accountID, groupID i
 	if err != nil {
 		return err
 	}
-	payload := buildSchedulerGroupPayload([]int64{groupID})
+	payload := buildSchedulerGroupPayload(mergeGroupIDs(existingGroupIDs, []int64{groupID}))
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountGroupsChanged, &accountID, nil, payload); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue add to group failed: account=%d group=%d err=%v", accountID, groupID, err)
 	}
@@ -829,7 +833,11 @@ func (r *accountRepository) AddToGroup(ctx context.Context, accountID, groupID i
 }
 
 func (r *accountRepository) RemoveFromGroup(ctx context.Context, accountID, groupID int64) error {
-	_, err := r.client.AccountGroup.Delete().
+	existingGroupIDs, err := r.loadAccountGroupIDs(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	_, err = r.client.AccountGroup.Delete().
 		Where(
 			dbaccountgroup.AccountIDEQ(accountID),
 			dbaccountgroup.GroupIDEQ(groupID),
@@ -838,7 +846,7 @@ func (r *accountRepository) RemoveFromGroup(ctx context.Context, accountID, grou
 	if err != nil {
 		return err
 	}
-	payload := buildSchedulerGroupPayload([]int64{groupID})
+	payload := buildSchedulerGroupPayload(mergeGroupIDs(existingGroupIDs, removeGroupID(existingGroupIDs, groupID)))
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountGroupsChanged, &accountID, nil, payload); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue remove from group failed: account=%d group=%d err=%v", accountID, groupID, err)
 	}
@@ -886,24 +894,19 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 		return err
 	}
 
-	if len(groupIDs) == 0 {
-		if tx != nil {
-			return tx.Commit()
+	if len(groupIDs) > 0 {
+		builders := make([]*dbent.AccountGroupCreate, 0, len(groupIDs))
+		for i, groupID := range groupIDs {
+			builders = append(builders, txClient.AccountGroup.Create().
+				SetAccountID(accountID).
+				SetGroupID(groupID).
+				SetPriority(i+1),
+			)
 		}
-		return nil
-	}
 
-	builders := make([]*dbent.AccountGroupCreate, 0, len(groupIDs))
-	for i, groupID := range groupIDs {
-		builders = append(builders, txClient.AccountGroup.Create().
-			SetAccountID(accountID).
-			SetGroupID(groupID).
-			SetPriority(i+1),
-		)
-	}
-
-	if _, err := txClient.AccountGroup.CreateBulk(builders...).Save(ctx); err != nil {
-		return err
+		if _, err := txClient.AccountGroup.CreateBulk(builders...).Save(ctx); err != nil {
+			return err
+		}
 	}
 
 	if tx != nil {
@@ -1705,8 +1708,13 @@ func (r *accountRepository) loadAccountGroupIDs(ctx context.Context, accountID i
 }
 
 func mergeGroupIDs(a []int64, b []int64) []int64 {
-	seen := make(map[int64]struct{}, len(a)+len(b))
-	out := make([]int64, 0, len(a)+len(b))
+	includeUngrouped := len(a) == 0 || len(b) == 0
+	seen := make(map[int64]struct{}, len(a)+len(b)+1)
+	out := make([]int64, 0, len(a)+len(b)+1)
+	if includeUngrouped {
+		seen[0] = struct{}{}
+		out = append(out, 0)
+	}
 	for _, id := range a {
 		if id <= 0 {
 			continue
@@ -1725,6 +1733,17 @@ func mergeGroupIDs(a []int64, b []int64) []int64 {
 			continue
 		}
 		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func removeGroupID(groupIDs []int64, removedID int64) []int64 {
+	out := make([]int64, 0, len(groupIDs))
+	for _, id := range groupIDs {
+		if id <= 0 || id == removedID {
+			continue
+		}
 		out = append(out, id)
 	}
 	return out

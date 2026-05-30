@@ -161,6 +161,7 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 		Concurrency: req.Concurrency,
 		Priority:    req.Priority,
 		Status:      StatusActive,
+		Schedulable: true,
 		ExpiresAt:   req.ExpiresAt,
 	}
 	if req.AutoPauseOnExpired != nil {

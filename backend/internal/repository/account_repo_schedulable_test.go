@@ -120,3 +120,14 @@ func TestIncrementQuotaUsedBelowLimitDoesNotEnqueueOutbox(t *testing.T) {
 	require.NoError(t, repo.IncrementQuotaUsed(context.Background(), 44, 4.0))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestMergeGroupIDsIncludesUngroupedTransitions(t *testing.T) {
+	require.Equal(t, []int64{0, 12}, mergeGroupIDs(nil, []int64{12}))
+	require.Equal(t, []int64{0, 12}, mergeGroupIDs([]int64{12}, nil))
+	require.Equal(t, []int64{12, 13}, mergeGroupIDs([]int64{12}, []int64{13}))
+}
+
+func TestRemoveGroupID(t *testing.T) {
+	require.Equal(t, []int64{12, 14}, removeGroupID([]int64{12, 13, 14}, 13))
+	require.Empty(t, removeGroupID([]int64{13}, 13))
+}

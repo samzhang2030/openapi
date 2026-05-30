@@ -420,6 +420,7 @@ func (s *SchedulerSnapshotService) handleAccountEvent(ctx context.Context, accou
 	if payload != nil {
 		groupIDs = parseInt64Slice(payload["group_ids"])
 	}
+	payloadGroupIDs := append([]int64(nil), groupIDs...)
 
 	account, err := s.accountRepo.GetByID(ctx, *accountID)
 	if err != nil {
@@ -441,7 +442,16 @@ func (s *SchedulerSnapshotService) handleAccountEvent(ctx context.Context, accou
 	if len(groupIDs) == 0 {
 		groupIDs = account.GroupIDs
 	}
-	return s.rebuildByAccount(ctx, account, groupIDs, "account_change", seen)
+	var firstErr error
+	if err := s.rebuildByAccount(ctx, account, groupIDs, "account_change", seen); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	if len(payloadGroupIDs) > 0 && len(account.GroupIDs) == 0 {
+		if err := s.rebuildByAccount(ctx, account, []int64{0}, "account_change_ungrouped", seen); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 func (s *SchedulerSnapshotService) handleGroupEvent(ctx context.Context, groupID *int64, seen map[batchSeenKey]struct{}) error {
@@ -703,7 +713,7 @@ func (s *SchedulerSnapshotService) normalizeGroupIDs(groupIDs []int64) []int64 {
 	seen := make(map[int64]struct{}, len(groupIDs))
 	out := make([]int64, 0, len(groupIDs))
 	for _, id := range groupIDs {
-		if id <= 0 {
+		if id < 0 {
 			continue
 		}
 		if _, ok := seen[id]; ok {
@@ -848,7 +858,7 @@ func parseInt64Slice(value any) []int64 {
 	}
 	out := make([]int64, 0, len(raw))
 	for _, item := range raw {
-		if v, ok := toInt64(item); ok && v > 0 {
+		if v, ok := toInt64(item); ok && v >= 0 {
 			out = append(out, v)
 		}
 	}
