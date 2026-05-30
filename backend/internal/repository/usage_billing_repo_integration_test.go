@@ -199,6 +199,68 @@ func TestUsageBillingRepositoryApply_UpdatesAccountQuota(t *testing.T) {
 	require.InDelta(t, 3.5, quotaUsed, 0.000001)
 }
 
+func TestUsageBillingRepositoryApply_ToleratesMalformedAccountQuotaExtra(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-malformed-account-user-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-usage-billing-malformed-account-" + uuid.NewString(),
+		Name:   "billing-malformed-account",
+	})
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: "usage-billing-malformed-account-quota-" + uuid.NewString(),
+		Type: service.AccountTypeAPIKey,
+		Extra: map[string]any{
+			"quota_used":              "not-a-number",
+			"quota_daily_limit":       "10",
+			"quota_daily_used":        "bad-daily-used",
+			"quota_daily_start":       "bad-daily-start",
+			"quota_daily_reset_mode":  "fixed",
+			"quota_daily_reset_hour":  "bad-hour",
+			"quota_daily_reset_at":    "bad-daily-reset",
+			"quota_weekly_limit":      "20",
+			"quota_weekly_used":       "bad-weekly-used",
+			"quota_weekly_start":      "bad-weekly-start",
+			"quota_weekly_reset_mode": "fixed",
+			"quota_weekly_reset_day":  "bad-day",
+			"quota_weekly_reset_hour": "bad-hour",
+			"quota_weekly_reset_at":   "bad-weekly-reset",
+			"quota_reset_timezone":    "Not/AZone",
+		},
+	})
+
+	result, err := repo.Apply(ctx, &service.UsageBillingCommand{
+		RequestID:        uuid.NewString(),
+		APIKeyID:         apiKey.ID,
+		UserID:           user.ID,
+		AccountID:        account.ID,
+		AccountType:      service.AccountTypeAPIKey,
+		AccountQuotaCost: 2.5,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.QuotaState)
+	require.InDelta(t, 2.5, result.QuotaState.TotalUsed, 0.000001)
+	require.InDelta(t, 2.5, result.QuotaState.DailyUsed, 0.000001)
+	require.InDelta(t, 2.5, result.QuotaState.WeeklyUsed, 0.000001)
+
+	accountRepo := newAccountRepositoryWithSQL(client, integrationDB, nil)
+	got, err := accountRepo.GetByID(ctx, account.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 2.5, got.GetQuotaUsed(), 0.000001)
+	require.InDelta(t, 2.5, got.GetQuotaDailyUsed(), 0.000001)
+	require.InDelta(t, 2.5, got.GetQuotaWeeklyUsed(), 0.000001)
+	require.NotEmpty(t, got.Extra["quota_daily_start"])
+	require.NotEmpty(t, got.Extra["quota_weekly_start"])
+	require.NotEmpty(t, got.Extra["quota_daily_reset_at"])
+	require.NotEmpty(t, got.Extra["quota_weekly_reset_at"])
+}
+
 func TestUsageBillingRepositoryApply_EnqueuesSchedulerOutboxOnQuotaCrossing(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

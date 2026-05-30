@@ -683,6 +683,42 @@ func (s *AccountRepoSuite) TestListSchedulable() {
 	s.Require().NotContains(ids, dailyQuotaExceeded.ID)
 }
 
+func (s *AccountRepoSuite) TestIncrementQuotaUsedToleratesMalformedQuotaExtra() {
+	account := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name: "quota-malformed",
+		Type: service.AccountTypeAPIKey,
+		Extra: map[string]any{
+			"quota_used":              "not-a-number",
+			"quota_daily_limit":       "10",
+			"quota_daily_used":        "bad-daily-used",
+			"quota_daily_start":       "bad-daily-start",
+			"quota_daily_reset_mode":  "fixed",
+			"quota_daily_reset_hour":  "bad-hour",
+			"quota_daily_reset_at":    "bad-daily-reset",
+			"quota_weekly_limit":      "20",
+			"quota_weekly_used":       "bad-weekly-used",
+			"quota_weekly_start":      "bad-weekly-start",
+			"quota_weekly_reset_mode": "fixed",
+			"quota_weekly_reset_day":  "bad-day",
+			"quota_weekly_reset_hour": "bad-hour",
+			"quota_weekly_reset_at":   "bad-weekly-reset",
+			"quota_reset_timezone":    "Not/AZone",
+		},
+	})
+
+	s.Require().NoError(s.repo.IncrementQuotaUsed(s.ctx, account.ID, 2.5))
+
+	got, err := s.repo.GetByID(s.ctx, account.ID)
+	s.Require().NoError(err)
+	s.Require().InDelta(2.5, got.GetQuotaUsed(), 0.000001)
+	s.Require().InDelta(2.5, got.GetQuotaDailyUsed(), 0.000001)
+	s.Require().InDelta(2.5, got.GetQuotaWeeklyUsed(), 0.000001)
+	s.Require().NotEmpty(got.Extra["quota_daily_start"])
+	s.Require().NotEmpty(got.Extra["quota_weekly_start"])
+	s.Require().NotEmpty(got.Extra["quota_daily_reset_at"])
+	s.Require().NotEmpty(got.Extra["quota_weekly_reset_at"])
+}
+
 func (s *AccountRepoSuite) TestListSchedulableByGroupID_TimeBoundaries_And_StatusUpdates() {
 	now := time.Now()
 	group := mustCreateGroup(s.T(), s.client, &service.Group{Name: "g-sched"})

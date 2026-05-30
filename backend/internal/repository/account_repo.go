@@ -1993,57 +1993,113 @@ func (r *accountRepository) FindByExtraField(ctx context.Context, key string, va
 // nowUTC is a SQL expression to generate a UTC RFC3339 timestamp string.
 const nowUTC = `to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
 
-// dailyExpiredExpr is a SQL expression that evaluates to TRUE when daily quota period has expired.
-// Supports both rolling (24h from start) and fixed (pre-computed reset_at) modes.
-const dailyExpiredExpr = `(
-	CASE WHEN COALESCE(extra->>'quota_daily_reset_mode', 'rolling') = 'fixed'
-	THEN NOW() >= COALESCE((extra->>'quota_daily_reset_at')::timestamptz, '1970-01-01'::timestamptz)
-	ELSE COALESCE((extra->>'quota_daily_start')::timestamptz, '1970-01-01'::timestamptz)
-		+ '24 hours'::interval <= NOW()
-	END
-)`
+func accountQuotaIncrementSQL() string {
+	extraCol := "extra"
+	amountExpr := "$1"
+	totalUsed := jsonbNumericSQL(extraCol, "quota_used")
+	dailyLimit := jsonbNumericSQL(extraCol, "quota_daily_limit")
+	dailyUsed := jsonbNumericSQL(extraCol, "quota_daily_used")
+	dailyExpired := accountDailyQuotaExpiredSQL(extraCol, "NOW()")
+	dailyStart := jsonbTimestampSQL(extraCol, "quota_daily_start")
+	nextDailyResetAt := accountNextDailyQuotaResetAtSQL(extraCol)
+	weeklyLimit := jsonbNumericSQL(extraCol, "quota_weekly_limit")
+	weeklyUsed := jsonbNumericSQL(extraCol, "quota_weekly_used")
+	weeklyExpired := accountWeeklyQuotaExpiredSQL(extraCol, "NOW()")
+	weeklyStart := jsonbTimestampSQL(extraCol, "quota_weekly_start")
+	nextWeeklyResetAt := accountNextWeeklyQuotaResetAtSQL(extraCol)
 
-// weeklyExpiredExpr is a SQL expression that evaluates to TRUE when weekly quota period has expired.
-const weeklyExpiredExpr = `(
-	CASE WHEN COALESCE(extra->>'quota_weekly_reset_mode', 'rolling') = 'fixed'
-	THEN NOW() >= COALESCE((extra->>'quota_weekly_reset_at')::timestamptz, '1970-01-01'::timestamptz)
-	ELSE COALESCE((extra->>'quota_weekly_start')::timestamptz, '1970-01-01'::timestamptz)
-		+ '168 hours'::interval <= NOW()
-	END
-)`
+	return `UPDATE accounts SET extra = (
+			COALESCE(extra, '{}'::jsonb)
+			-- 总额度：始终递增
+			|| jsonb_build_object('quota_used', ` + totalUsed + ` + ` + amountExpr + `)
+			-- 日额度：仅在 quota_daily_limit > 0 时处理
+			|| CASE WHEN ` + dailyLimit + ` > 0 THEN
+				jsonb_build_object(
+					'quota_daily_used',
+					CASE WHEN ` + dailyExpired + `
+					THEN ` + amountExpr + `
+					ELSE ` + dailyUsed + ` + ` + amountExpr + ` END,
+					'quota_daily_start',
+					CASE WHEN ` + dailyExpired + ` OR ` + dailyStart + ` IS NULL
+					THEN ` + nowUTC + `
+					ELSE COALESCE(extra->>'quota_daily_start', ` + nowUTC + `) END
+				)
+				-- 固定模式重置时更新下次重置时间
+				|| CASE WHEN ` + dailyExpired + ` AND ` + nextDailyResetAt + ` IS NOT NULL
+				   THEN jsonb_build_object('quota_daily_reset_at', ` + nextDailyResetAt + `)
+				   ELSE '{}'::jsonb END
+			ELSE '{}'::jsonb END
+			-- 周额度：仅在 quota_weekly_limit > 0 时处理
+			|| CASE WHEN ` + weeklyLimit + ` > 0 THEN
+				jsonb_build_object(
+					'quota_weekly_used',
+					CASE WHEN ` + weeklyExpired + `
+					THEN ` + amountExpr + `
+					ELSE ` + weeklyUsed + ` + ` + amountExpr + ` END,
+					'quota_weekly_start',
+					CASE WHEN ` + weeklyExpired + ` OR ` + weeklyStart + ` IS NULL
+					THEN ` + nowUTC + `
+					ELSE COALESCE(extra->>'quota_weekly_start', ` + nowUTC + `) END
+				)
+				-- 固定模式重置时更新下次重置时间
+				|| CASE WHEN ` + weeklyExpired + ` AND ` + nextWeeklyResetAt + ` IS NOT NULL
+				   THEN jsonb_build_object('quota_weekly_reset_at', ` + nextWeeklyResetAt + `)
+				   ELSE '{}'::jsonb END
+			ELSE '{}'::jsonb END
+		), updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL
+		RETURNING ` + accountQuotaStateReturningSQL(extraCol)
+}
 
-// nextDailyResetAtExpr is a SQL expression to compute the next daily reset_at when a reset occurs.
+func accountQuotaStateReturningSQL(extraCol string) string {
+	return jsonbNumericSQL(extraCol, "quota_used") + `,
+			` + jsonbNumericSQL(extraCol, "quota_limit") + `,
+			` + jsonbNumericSQL(extraCol, "quota_daily_used") + `,
+			` + jsonbNumericSQL(extraCol, "quota_daily_limit") + `,
+			` + jsonbNumericSQL(extraCol, "quota_weekly_used") + `,
+			` + jsonbNumericSQL(extraCol, "quota_weekly_limit")
+}
+
+// accountNextDailyQuotaResetAtSQL computes the next daily reset_at when a reset occurs.
 // For fixed mode: computes the next future reset time based on NOW(), timezone, and configured hour.
 // This correctly handles long-inactive accounts by jumping directly to the next valid reset point.
-const nextDailyResetAtExpr = `(
-	CASE WHEN COALESCE(extra->>'quota_daily_reset_mode', 'rolling') = 'fixed'
+func accountNextDailyQuotaResetAtSQL(extraCol string) string {
+	tz := jsonbTimezoneSQL(extraCol, "quota_reset_timezone", "UTC")
+	hour := jsonbIntSQL(extraCol, "quota_daily_reset_hour", 0, 0, 23)
+	return `(
+	CASE WHEN COALESCE(` + extraCol + `->>'quota_daily_reset_mode', 'rolling') = 'fixed'
 	THEN to_char((
 		-- Compute today's reset point in the configured timezone, then pick next future one
 		CASE WHEN NOW() >= (
-			date_trunc('day', NOW() AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC'))
-			+ (COALESCE((extra->>'quota_daily_reset_hour')::int, 0) || ' hours')::interval
-		) AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC')
+			date_trunc('day', NOW() AT TIME ZONE ` + tz + `)
+			+ (` + hour + ` || ' hours')::interval
+		) AT TIME ZONE ` + tz + `
 		-- NOW() is at or past today's reset point → next reset is tomorrow
 		THEN (
-			date_trunc('day', NOW() AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC'))
-			+ (COALESCE((extra->>'quota_daily_reset_hour')::int, 0) || ' hours')::interval
+			date_trunc('day', NOW() AT TIME ZONE ` + tz + `)
+			+ (` + hour + ` || ' hours')::interval
 			+ '1 day'::interval
-		) AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC')
+		) AT TIME ZONE ` + tz + `
 		-- NOW() is before today's reset point → next reset is today
 		ELSE (
-			date_trunc('day', NOW() AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC'))
-			+ (COALESCE((extra->>'quota_daily_reset_hour')::int, 0) || ' hours')::interval
-		) AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC')
+			date_trunc('day', NOW() AT TIME ZONE ` + tz + `)
+			+ (` + hour + ` || ' hours')::interval
+		) AT TIME ZONE ` + tz + `
 		END
 	) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 	ELSE NULL END
 )`
+}
 
-// nextWeeklyResetAtExpr is a SQL expression to compute the next weekly reset_at when a reset occurs.
+// accountNextWeeklyQuotaResetAtSQL computes the next weekly reset_at when a reset occurs.
 // For fixed mode: computes the next future reset time based on NOW(), timezone, configured day and hour.
 // This correctly handles long-inactive accounts by jumping directly to the next valid reset point.
-const nextWeeklyResetAtExpr = `(
-	CASE WHEN COALESCE(extra->>'quota_weekly_reset_mode', 'rolling') = 'fixed'
+func accountNextWeeklyQuotaResetAtSQL(extraCol string) string {
+	tz := jsonbTimezoneSQL(extraCol, "quota_reset_timezone", "UTC")
+	day := jsonbIntSQL(extraCol, "quota_weekly_reset_day", 1, 0, 6)
+	hour := jsonbIntSQL(extraCol, "quota_weekly_reset_hour", 0, 0, 23)
+	return `(
+	CASE WHEN COALESCE(` + extraCol + `->>'quota_weekly_reset_mode', 'rolling') = 'fixed'
 	THEN to_char((
 		-- Compute this week's reset point in the configured timezone
 		-- Step 1: get today's date at reset hour in configured tz
@@ -2052,87 +2108,52 @@ const nextWeeklyResetAtExpr = `(
 		CASE
 		WHEN (
 			-- days_forward = (target_day - current_day + 7) % 7
-			(COALESCE((extra->>'quota_weekly_reset_day')::int, 1)
-			 - EXTRACT(DOW FROM NOW() AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC'))::int
+			(` + day + `
+			 - EXTRACT(DOW FROM NOW() AT TIME ZONE ` + tz + `)::int
 			 + 7) % 7
 		) = 0 AND NOW() >= (
-			date_trunc('day', NOW() AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC'))
-			+ (COALESCE((extra->>'quota_weekly_reset_hour')::int, 0) || ' hours')::interval
-		) AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC')
+			date_trunc('day', NOW() AT TIME ZONE ` + tz + `)
+			+ (` + hour + ` || ' hours')::interval
+		) AT TIME ZONE ` + tz + `
 		-- Same weekday and past reset hour → next week
 		THEN (
-			date_trunc('day', NOW() AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC'))
-			+ (COALESCE((extra->>'quota_weekly_reset_hour')::int, 0) || ' hours')::interval
+			date_trunc('day', NOW() AT TIME ZONE ` + tz + `)
+			+ (` + hour + ` || ' hours')::interval
 			+ '7 days'::interval
-		) AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC')
+		) AT TIME ZONE ` + tz + `
 		ELSE (
 			-- Advance to target weekday this week (or next if days_forward > 0)
-			date_trunc('day', NOW() AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC'))
-			+ (COALESCE((extra->>'quota_weekly_reset_hour')::int, 0) || ' hours')::interval
+			date_trunc('day', NOW() AT TIME ZONE ` + tz + `)
+			+ (` + hour + ` || ' hours')::interval
 			+ ((
-				(COALESCE((extra->>'quota_weekly_reset_day')::int, 1)
-				 - EXTRACT(DOW FROM NOW() AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC'))::int
+				(` + day + `
+				 - EXTRACT(DOW FROM NOW() AT TIME ZONE ` + tz + `)::int
 				 + 7) % 7
 			) || ' days')::interval
-		) AT TIME ZONE COALESCE(extra->>'quota_reset_timezone', 'UTC')
+		) AT TIME ZONE ` + tz + `
 		END
 	) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 	ELSE NULL END
 )`
+}
+
+func jsonbIntSQL(jsonbCol, key string, defaultValue, minValue, maxValue int) string {
+	value := "btrim(" + jsonbCol + "->>'" + key + "')"
+	parsed := `(CASE WHEN ` + value + ` ~ '^-?\d+(\.\d+)?$' THEN trunc((` + value + `)::numeric)::int ELSE NULL END)`
+	return `(CASE WHEN ` + parsed + ` IS NULL OR ` + parsed + ` < ` + strconv.Itoa(minValue) + ` OR ` + parsed + ` > ` + strconv.Itoa(maxValue) + ` THEN ` + strconv.Itoa(defaultValue) + ` ELSE ` + parsed + ` END)`
+}
+
+func jsonbTimezoneSQL(jsonbCol, key, defaultValue string) string {
+	value := "NULLIF(btrim(" + jsonbCol + "->>'" + key + "'), '')"
+	quotedDefault := "'" + strings.ReplaceAll(defaultValue, "'", "''") + "'"
+	return `(CASE WHEN ` + value + ` IS NOT NULL AND EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = ` + value + `) THEN ` + value + ` ELSE ` + quotedDefault + ` END)`
+}
 
 // IncrementQuotaUsed 原子递增账号的配额用量（总/日/周三个维度）
 // 日/周额度在周期过期时自动重置为 0 再递增。
 // 支持滚动窗口（rolling）和固定时间（fixed）两种重置模式。
 func (r *accountRepository) IncrementQuotaUsed(ctx context.Context, id int64, amount float64) error {
-	rows, err := r.sql.QueryContext(ctx,
-		`UPDATE accounts SET extra = (
-			COALESCE(extra, '{}'::jsonb)
-			-- 总额度：始终递增
-			|| jsonb_build_object('quota_used', COALESCE((extra->>'quota_used')::numeric, 0) + $1)
-			-- 日额度：仅在 quota_daily_limit > 0 时处理
-			|| CASE WHEN COALESCE((extra->>'quota_daily_limit')::numeric, 0) > 0 THEN
-				jsonb_build_object(
-					'quota_daily_used',
-					CASE WHEN `+dailyExpiredExpr+`
-					THEN $1
-					ELSE COALESCE((extra->>'quota_daily_used')::numeric, 0) + $1 END,
-					'quota_daily_start',
-					CASE WHEN `+dailyExpiredExpr+`
-					THEN `+nowUTC+`
-					ELSE COALESCE(extra->>'quota_daily_start', `+nowUTC+`) END
-				)
-				-- 固定模式重置时更新下次重置时间
-				|| CASE WHEN `+dailyExpiredExpr+` AND `+nextDailyResetAtExpr+` IS NOT NULL
-				   THEN jsonb_build_object('quota_daily_reset_at', `+nextDailyResetAtExpr+`)
-				   ELSE '{}'::jsonb END
-			ELSE '{}'::jsonb END
-			-- 周额度：仅在 quota_weekly_limit > 0 时处理
-			|| CASE WHEN COALESCE((extra->>'quota_weekly_limit')::numeric, 0) > 0 THEN
-				jsonb_build_object(
-					'quota_weekly_used',
-					CASE WHEN `+weeklyExpiredExpr+`
-					THEN $1
-					ELSE COALESCE((extra->>'quota_weekly_used')::numeric, 0) + $1 END,
-					'quota_weekly_start',
-					CASE WHEN `+weeklyExpiredExpr+`
-					THEN `+nowUTC+`
-					ELSE COALESCE(extra->>'quota_weekly_start', `+nowUTC+`) END
-				)
-				-- 固定模式重置时更新下次重置时间
-				|| CASE WHEN `+weeklyExpiredExpr+` AND `+nextWeeklyResetAtExpr+` IS NOT NULL
-				   THEN jsonb_build_object('quota_weekly_reset_at', `+nextWeeklyResetAtExpr+`)
-				   ELSE '{}'::jsonb END
-			ELSE '{}'::jsonb END
-		), updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
-		RETURNING
-			COALESCE((extra->>'quota_used')::numeric, 0),
-			COALESCE((extra->>'quota_limit')::numeric, 0),
-			COALESCE((extra->>'quota_daily_used')::numeric, 0),
-			COALESCE((extra->>'quota_daily_limit')::numeric, 0),
-			COALESCE((extra->>'quota_weekly_used')::numeric, 0),
-			COALESCE((extra->>'quota_weekly_limit')::numeric, 0)`,
-		amount, id)
+	rows, err := r.sql.QueryContext(ctx, accountQuotaIncrementSQL(), amount, id)
 	if err != nil {
 		return err
 	}
