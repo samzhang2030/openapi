@@ -324,9 +324,9 @@ func incrementUsageBillingAccountQuota(ctx context.Context, tx *sql.Tx, accountI
 	// 最终观察到 daily_used / weekly_used 大幅超过配置的 limit。
 	// 对于日/周额度，即使本次触发了周期重置（pre=0、post=amount），
 	// 判定式 (post-amount) < limit 同样成立，逻辑与总额度保持一致。
-	crossedTotal := state.TotalLimit > 0 && state.TotalUsed >= state.TotalLimit && (state.TotalUsed-amount) < state.TotalLimit
-	crossedDaily := state.DailyLimit > 0 && state.DailyUsed >= state.DailyLimit && (state.DailyUsed-amount) < state.DailyLimit
-	crossedWeekly := state.WeeklyLimit > 0 && state.WeeklyUsed >= state.WeeklyLimit && (state.WeeklyUsed-amount) < state.WeeklyLimit
+	crossedTotal := quotaLimitCrossedAfterIncrement(state.TotalUsed, state.TotalLimit, amount)
+	crossedDaily := quotaLimitCrossedAfterIncrement(state.DailyUsed, state.DailyLimit, amount)
+	crossedWeekly := quotaLimitCrossedAfterIncrement(state.WeeklyUsed, state.WeeklyLimit, amount)
 	if crossedTotal || crossedDaily || crossedWeekly {
 		if err := enqueueSchedulerOutbox(ctx, tx, service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil); err != nil {
 			logger.LegacyPrintf("repository.usage_billing", "[SchedulerOutbox] enqueue quota exceeded failed: account=%d err=%v", accountID, err)
@@ -334,4 +334,8 @@ func incrementUsageBillingAccountQuota(ctx context.Context, tx *sql.Tx, accountI
 		}
 	}
 	return &state, nil
+}
+
+func quotaLimitCrossedAfterIncrement(used, limit, increment float64) bool {
+	return limit > 0 && used >= limit && (used-increment) < limit
 }

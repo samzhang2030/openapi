@@ -48,3 +48,75 @@ func TestBulkUpdateSchedulableTrueClearsExpiredAutoPauseSQL(t *testing.T) {
 	require.Equal(t, int64(2), rows)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestIncrementQuotaUsedDailyCrossingEnqueuesOutbox(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	repo := newAccountRepositoryWithSQL(nil, db, nil)
+
+	mock.ExpectQuery(`(?s)UPDATE accounts SET extra = .*RETURNING.*quota_daily_used.*quota_daily_limit.*quota_weekly_used.*quota_weekly_limit`).
+		WithArgs(8.0, int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"quota_used",
+			"quota_limit",
+			"quota_daily_used",
+			"quota_daily_limit",
+			"quota_weekly_used",
+			"quota_weekly_limit",
+		}).AddRow(12.0, 0.0, 12.0, 10.0, 0.0, 0.0))
+	mock.ExpectExec(`(?s)INSERT INTO scheduler_outbox`).
+		WithArgs(service.SchedulerOutboxEventAccountChanged, sqlmock.AnyArg(), nil, nil, schedulerOutboxDedupWindow.Seconds()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	require.NoError(t, repo.IncrementQuotaUsed(context.Background(), 42, 8.0))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestIncrementQuotaUsedWeeklyCrossingEnqueuesOutbox(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	repo := newAccountRepositoryWithSQL(nil, db, nil)
+
+	mock.ExpectQuery(`(?s)UPDATE accounts SET extra = .*RETURNING.*quota_daily_used.*quota_daily_limit.*quota_weekly_used.*quota_weekly_limit`).
+		WithArgs(15.0, int64(43)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"quota_used",
+			"quota_limit",
+			"quota_daily_used",
+			"quota_daily_limit",
+			"quota_weekly_used",
+			"quota_weekly_limit",
+		}).AddRow(15.0, 0.0, 0.0, 0.0, 15.0, 10.0))
+	mock.ExpectExec(`(?s)INSERT INTO scheduler_outbox`).
+		WithArgs(service.SchedulerOutboxEventAccountChanged, sqlmock.AnyArg(), nil, nil, schedulerOutboxDedupWindow.Seconds()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	require.NoError(t, repo.IncrementQuotaUsed(context.Background(), 43, 15.0))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestIncrementQuotaUsedBelowLimitDoesNotEnqueueOutbox(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	repo := newAccountRepositoryWithSQL(nil, db, nil)
+
+	mock.ExpectQuery(`(?s)UPDATE accounts SET extra = .*RETURNING.*quota_daily_used.*quota_daily_limit.*quota_weekly_used.*quota_weekly_limit`).
+		WithArgs(4.0, int64(44)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"quota_used",
+			"quota_limit",
+			"quota_daily_used",
+			"quota_daily_limit",
+			"quota_weekly_used",
+			"quota_weekly_limit",
+		}).AddRow(4.0, 0.0, 4.0, 10.0, 4.0, 20.0))
+
+	require.NoError(t, repo.IncrementQuotaUsed(context.Background(), 44, 4.0))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
