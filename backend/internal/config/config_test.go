@@ -309,8 +309,6 @@ func TestLoadDefaultSecurityToggles(t *testing.T) {
 	if !cfg.Security.URLAllowlist.AllowPrivateHosts {
 		t.Fatalf("URLAllowlist.AllowPrivateHosts = false, want true")
 	}
-	require.Contains(t, cfg.Security.URLAllowlist.UpstreamHosts, "right.codes")
-	require.Contains(t, cfg.Security.URLAllowlist.UpstreamHosts, "*.right.codes")
 	if !cfg.Security.ResponseHeaders.Enabled {
 		t.Fatalf("ResponseHeaders.Enabled = false, want true")
 	}

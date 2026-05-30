@@ -1527,8 +1527,6 @@ func setDefaults() {
 		"api.minimaxi.com",
 		"generativelanguage.googleapis.com",
 		"cloudcode-pa.googleapis.com",
-		"right.codes",
-		"*.right.codes",
 		"*.openai.azure.com",
 	})
 	viper.SetDefault("security.url_allowlist.pricing_hosts", []string{
