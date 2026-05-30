@@ -437,6 +437,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 		}
 
 		credentials := sanitizeCredentialsMap(src.Credentials)
+		cleanAnthropicAPIKeyBaseURL(credentials)
 		priority := clampPriority(src.Priority)
 		concurrency := 3
 		if src.MaxConcurrentTasks > 0 {
@@ -1141,6 +1142,13 @@ func cleanBaseURL(credentials map[string]any, suffixToRemove string) {
 		if strings.HasSuffix(trimmed, suffixToRemove) {
 			credentials["base_url"] = strings.TrimSuffix(trimmed, suffixToRemove)
 		}
+	}
+}
+
+func cleanAnthropicAPIKeyBaseURL(credentials map[string]any) {
+	cleanBaseURL(credentials, "/v1")
+	if baseURL, ok := credentials["base_url"].(string); ok && strings.TrimSpace(baseURL) != "" {
+		credentials["base_url"] = normalizeRightCodesAnthropicRelayBaseURL(baseURL)
 	}
 }
 

@@ -110,3 +110,42 @@ func TestShouldCreateAccount(t *testing.T) {
 		})
 	}
 }
+
+func TestCleanAnthropicAPIKeyBaseURL(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "right codes api keys page",
+			in:   "https://www.right.codes/api-keys?tab=keys",
+			want: "https://www.right.codes",
+		},
+		{
+			name: "right codes relay v1 suffix",
+			in:   "https://api.right.codes/v1",
+			want: "https://api.right.codes",
+		},
+		{
+			name: "standard anthropic v1 suffix",
+			in:   "https://api.anthropic.com/v1",
+			want: "https://api.anthropic.com",
+		},
+		{
+			name: "custom relay path is preserved",
+			in:   "https://relay.example.com/custom-prefix",
+			want: "https://relay.example.com/custom-prefix",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			credentials := map[string]any{"base_url": tt.in}
+			cleanAnthropicAPIKeyBaseURL(credentials)
+			if got := credentials["base_url"]; got != tt.want {
+				t.Errorf("base_url = %v, want %q", got, tt.want)
+			}
+		})
+	}
+}
