@@ -77,4 +77,51 @@ sed '$d' "${UPDATE_SCRIPT}" > "${SOURCEABLE_SCRIPT}"
   test "$(cat "${RELEASE_DIR}/backend/new/untracked.txt")" = "untracked local file"
 )
 
-printf 'update_production.sh blocks dirty worktrees by default and allows explicit dirty overlays\n'
+OVERRIDE_FILE="${TMP_ROOT}/docker-compose.override.yml"
+cat > "${OVERRIDE_FILE}" <<'YAML'
+services:
+  sub2api:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - KEEP_CUSTOM=1
+  redis:
+    image: redis:7
+YAML
+
+UPDATE_SCRIPT_PATH="${SOURCEABLE_SCRIPT}" OVERRIDE_FILE="${OVERRIDE_FILE}" bash -lc '
+  set -euo pipefail
+  source "${UPDATE_SCRIPT_PATH}"
+  trap - EXIT
+  OVERRIDE_FILE="'"${OVERRIDE_FILE}"'"
+  SERVICE_NAME=sub2api
+  IMAGE_REPOSITORY=openapi-prod
+  TARGET_SHORT_SHA=abc12345
+  write_override_file
+'
+
+grep -q "image: openapi-prod:abc12345" "${OVERRIDE_FILE}"
+grep -q "KEEP_CUSTOM=1" "${OVERRIDE_FILE}"
+grep -q "redis:" "${OVERRIDE_FILE}"
+grep -q "image: redis:7" "${OVERRIDE_FILE}"
+
+FAKE_BIN="${TMP_ROOT}/bin"
+mkdir -p "${FAKE_BIN}" "${TMP_ROOT}/deploy"
+cat > "${FAKE_BIN}/docker" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "${DOCKER_ARGS_FILE}"
+SH
+chmod +x "${FAKE_BIN}/docker"
+
+UPDATE_SCRIPT_PATH="${SOURCEABLE_SCRIPT}" DOCKER_ARGS_FILE="${TMP_ROOT}/docker.args" PATH="${FAKE_BIN}:${PATH}" bash -lc '
+  set -euo pipefail
+  source "${UPDATE_SCRIPT_PATH}"
+  trap - EXIT
+  DEPLOY_DIR="'"${TMP_ROOT}/deploy"'"
+  SERVICE_NAME=sub2api
+  deploy_service
+'
+
+grep -q -- "compose up -d --no-deps sub2api" "${TMP_ROOT}/docker.args"
+
+printf 'update_production.sh preserves override customizations, blocks dirty worktrees, and restarts only the app service\n'

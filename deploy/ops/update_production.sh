@@ -242,20 +242,103 @@ build_release_image() {
 }
 
 write_override_file() {
+  local image_ref
+  image_ref="${IMAGE_REPOSITORY}:${TARGET_SHORT_SHA}"
+
   mkdir -p "$(dirname "${OVERRIDE_FILE}")"
-  cat > "${OVERRIDE_FILE}" <<EOF
-services:
-  ${SERVICE_NAME}:
-    image: ${IMAGE_REPOSITORY}:${TARGET_SHORT_SHA}
-EOF
-  print_success "Updated ${OVERRIDE_FILE}"
+  python3 - "${OVERRIDE_FILE}" "${SERVICE_NAME}" "${image_ref}" <<'PY'
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+service_name = sys.argv[2]
+image_ref = sys.argv[3]
+
+lines = path.read_text().splitlines(keepends=True) if path.exists() else []
+
+
+def line_indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def is_block_boundary(line: str, indent: int) -> bool:
+    stripped = line.strip()
+    return bool(stripped and not stripped.startswith("#") and line_indent(line) <= indent)
+
+
+def append_block() -> None:
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] = lines[-1] + "\n"
+    if lines and lines[-1].strip():
+        lines.append("\n")
+    lines.extend([
+        "services:\n",
+        f"  {service_name}:\n",
+        f"    image: {image_ref}\n",
+    ])
+
+
+services_idx = None
+for idx, line in enumerate(lines):
+    if re.match(r"^services\s*:\s*(?:#.*)?$", line):
+        services_idx = idx
+        break
+
+if services_idx is None:
+    append_block()
+    path.write_text("".join(lines))
+    sys.exit(0)
+
+services_indent = line_indent(lines[services_idx])
+services_end = len(lines)
+for idx in range(services_idx + 1, len(lines)):
+    if is_block_boundary(lines[idx], services_indent):
+        services_end = idx
+        break
+
+service_idx = None
+service_indent = services_indent + 2
+service_pattern = re.compile(rf"^ {{{service_indent}}}{re.escape(service_name)}\s*:\s*(?:#.*)?$")
+for idx in range(services_idx + 1, services_end):
+    if service_pattern.match(lines[idx]):
+        service_idx = idx
+        break
+
+if service_idx is None:
+    insert_at = services_end
+    lines[insert_at:insert_at] = [
+        f"  {service_name}:\n",
+        f"    image: {image_ref}\n",
+    ]
+    path.write_text("".join(lines))
+    sys.exit(0)
+
+service_end = services_end
+for idx in range(service_idx + 1, services_end):
+    if is_block_boundary(lines[idx], service_indent):
+        service_end = idx
+        break
+
+image_pattern = re.compile(r"^(\s*)image\s*:")
+for idx in range(service_idx + 1, service_end):
+    match = image_pattern.match(lines[idx])
+    if match:
+        lines[idx] = f"{match.group(1)}image: {image_ref}\n"
+        path.write_text("".join(lines))
+        sys.exit(0)
+
+lines[service_idx + 1:service_idx + 1] = [f"    image: {image_ref}\n"]
+path.write_text("".join(lines))
+PY
+  print_success "Updated ${OVERRIDE_FILE} service image to ${image_ref}"
 }
 
 deploy_service() {
   print_info "Restarting ${SERVICE_NAME} with docker compose..."
   (
     cd "${DEPLOY_DIR}"
-    docker compose up -d "${SERVICE_NAME}"
+    docker compose up -d --no-deps "${SERVICE_NAME}"
   )
 }
 
@@ -294,6 +377,7 @@ run_health_checks() {
 main() {
   require_command git
   require_command docker
+  require_command python3
   require_command tar
   require_command mktemp
 
