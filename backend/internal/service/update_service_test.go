@@ -1,3 +1,5 @@
+//go:build unit
+
 package service
 
 import (
@@ -384,5 +386,6 @@ func TestPerformUpdate_ReturnsConflictWhenAlreadyUpToDate(t *testing.T) {
 	require.Equal(t, http.StatusConflict, infraerrors.Code(err))
 	require.Equal(t, "NO_UPDATE_AVAILABLE", infraerrors.Reason(err))
 	require.Contains(t, infraerrors.Message(err), "latest version")
+	require.ErrorIs(t, err, ErrNoUpdateAvailable)
 	require.Zero(t, client.downloadCalls)
 }
